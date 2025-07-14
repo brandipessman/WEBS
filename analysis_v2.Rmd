@@ -1,0 +1,605 @@
+---
+title: "Analysis of WEBS Survey Data"
+author: "Brandi Pessman"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r libraries and import, echo = TRUE, results = 'hide', collapse = TRUE, message = FALSE, warning = FALSE}
+# Libraries
+library(tidyverse)
+library(cowplot)
+
+# Color palette
+three_colors = c("#1b9e77", "#785ef0", "#e6ab02")
+four_colors = c("#1b9e77", "#d95f02", "#7570b3", "#e7298a")
+five_colors = c("#1b9e77", "#d95f02", "#7570b3", "#e7298a", "#e6ab02")
+six_colors = c("#1b9e77", "#d95f02", "#7570b3", "#e7298a", "#e6ab02", "#66a61e")
+
+# Modules Completed
+completed <-
+  read.csv("query_outputs/query_outputs2/module_survey_completion.csv") 
+self_reported <-
+  read.csv("query_outputs/query_outputs2/participation_counts_modules.csv") 
+
+# Module Efficacy
+module1_training <- read.csv("query_outputs/query_outputs2/module1_training.csv") 
+module2_training <- read.csv("query_outputs/query_outputs2/module2_training.csv") 
+module3_training <- read.csv("query_outputs/query_outputs2/module3_training.csv") 
+module4_training <- read.csv("query_outputs/query_outputs2/module4_training.csv") 
+
+# Spider Curiosity
+spider_curiosity_individual <- read.csv("query_outputs/query_outputs2/spider_curiosity_individual.csv")
+```
+
+# Modules Completed {.tabset}
+
+First, I wanted to see how many participants completed the workshop modules. I could achieve this in two different ways:
+
+* The number of surveys completed after each module
+
+* The number of self-reported (from the post-training survey) completed module workshops
+
+*The numbers on the bars represent the raw number of participants.*
+
+## Completed Module Surveys
+
+**Spring 2022 had the highest module survey completion.**
+
+```sql
+WITH module_summary AS(
+	SELECT
+	  COALESCE(m1.recipient_id, m2.recipient_id, m3.recipient_id, m4.recipient_id) AS recipient_id,
+	  p.iteration,
+	  CASE WHEN m1.recipient_id IS NULL THEN 0 ELSE 1 END AS module1,
+	  CASE WHEN m2.recipient_id IS NULL THEN 0 ELSE 1 END AS module2,
+	  CASE WHEN m3.recipient_id IS NULL THEN 0 ELSE 1 END AS module3,
+	  CASE WHEN m4.recipient_id IS NULL THEN 0 ELSE 1 END AS module4,
+	  (CASE WHEN m1.recipient_id IS NULL THEN 0 ELSE 1 END +
+	   CASE WHEN m2.recipient_id IS NULL THEN 0 ELSE 1 END +
+	   CASE WHEN m3.recipient_id IS NULL THEN 0 ELSE 1 END +
+	   CASE WHEN m4.recipient_id IS NULL THEN 0 ELSE 1 END) AS module_count
+	FROM training.module1 m1
+	FULL JOIN training.module2 m2 
+	  ON m1.recipient_id = m2.recipient_id
+	FULL JOIN training.module3 m3 
+	  ON COALESCE(m1.recipient_id, m2.recipient_id) = m3.recipient_id
+	FULL JOIN training.module4 m4 
+	  ON COALESCE(m1.recipient_id, m2.recipient_id, m3.recipient_id) = m4.recipient_id
+	-- Add the join to participants
+	LEFT JOIN training.participants p 
+	  ON COALESCE(m1.recipient_id, m2.recipient_id, m3.recipient_id, m4.recipient_id) = p.recipient_id
+	GROUP BY 
+	  COALESCE(m1.recipient_id, m2.recipient_id, m3.recipient_id, m4.recipient_id),
+	  p.iteration,
+	  m1.recipient_id, m2.recipient_id, m3.recipient_id, m4.recipient_id
+	ORDER BY recipient_id
+)
+
+SELECT iteration, module_count, COUNT(*) AS n_participants
+FROM module_summary
+GROUP BY iteration, module_count
+ORDER BY iteration, module_count;
+```
+
+```{r modules completed, echo = TRUE, collapse = TRUE, message = FALSE, warning = FALSE, fig.align="center", fig.width = 7, fig.height = 5}
+# set factor level order
+completed <- completed %>% 
+  mutate(module_count = factor(module_count),
+         module_count = fct_relevel(module_count, "4", "3", "2", "1"),
+         iteration = factor(iteration),
+         iteration = fct_relevel(iteration, 
+                                 "Spring 2023", "Fall 2022", "Spring 2022"))
+
+# Sets the positions for where to put the raw numebrs in the graph
+completed$position <- c(0.12, 0.36, 0.7, 0.05, 0.175, 
+                        0.325, 0.65, 0.097, 0.24, 0.65)
+
+# Makes the graph
+completed %>% 
+  ggplot() +
+    geom_bar(aes(x = n_participants, y = iteration, fill = module_count), 
+             position = "fill", stat = "identity") +
+    geom_text(aes(x = position, y = iteration, label = n_participants)) +
+    scale_x_continuous(labels = scales::percent) +
+  scale_fill_manual("No. Modules Surveys Completed", 
+                 values = four_colors) +
+  xlab("") +
+  ylab("") +
+  theme_classic() +
+  theme(legend.position = "top",
+        axis.text = element_text(size = 12, color = "black"),
+        legend.text = element_text(size = 12, color = "black"),
+        legend.title = element_text(size = 12, color = "black")) +
+  guides(fill = guide_legend(reverse=TRUE))
+```
+
+---
+
+## Self-Reported in Post-Survey
+
+**Spring 2022 had the highest participation in the post-training survey.**
+
+```sql
+SELECT answer_count, iteration, COUNT(*) AS n_participants
+FROM(
+	SELECT posttest.recipient_id, iteration, COUNT(answer) AS answer_count
+	FROM training.posttest
+	JOIN training.participants
+	ON posttest.recipient_id = participants.recipient_id
+	JOIN training.questions
+	ON posttest.question_id = questions.question_id
+	WHERE posttest.question_id LIKE 'participation%'
+	AND posttest.question_id NOT LIKE 'participation5'
+	GROUP BY posttest.recipient_id, iteration
+)
+GROUP BY answer_count, iteration
+ORDER BY iteration, answer_count;
+```
+
+```{r modules self-reported, echo = TRUE, collapse = TRUE, message = FALSE, warning = FALSE, fig.align="center", fig.width = 7, fig.height = 5}
+# set factor level order
+self_reported <- self_reported %>% 
+  mutate(answer_count = factor(answer_count),
+         answer_count = fct_relevel(answer_count, "4", "3", "2", "1"),
+         iteration = factor(iteration),
+         iteration = fct_relevel(iteration, 
+                                 "Spring 2023", "Fall 2022", "Spring 2022"))
+
+# Sets the positions for where to put the raw numebrs in the graph
+self_reported$position <- c(0.31, 0.81, 0.07, 0.57, 
+                              0.02, 0.09, 0.54, 0.98)
+
+# Makes the graph
+self_reported %>% 
+  ggplot() +
+    geom_bar(aes(x = n_participants, y = iteration, fill = answer_count), 
+             position = "fill", stat = "identity") +
+    geom_text(aes(x = position, y = iteration, label = n_participants)) +
+    scale_x_continuous(labels = scales::percent) +
+  scale_fill_manual("No. Self-Reported Modules Completed", 
+                 values = four_colors) +
+  xlab("") +
+  ylab("") +
+  theme_classic() +
+  theme(legend.position = "top",
+        axis.text = element_text(size = 12, color = "black"),
+        legend.text = element_text(size = 12, color = "black"),
+        legend.title = element_text(size = 12, color = "black")) +
+  guides(fill = guide_legend(reverse=TRUE))
+```
+
+---
+# Module Efficacy  {.tabset}
+
+Next, I wanted to explore the surveys provided after each module to look at the effectiveness of the module. 
+
+*The numbers to the right indicate the number of survey responses associated with each statement.*
+
+```sql
+SELECT iteration, module, module1.question_id, definition1, definition2, definition3, definition4, definition5, question, answer, COUNT(module1.recipient_id) AS response
+FROM training.module1
+JOIN training.participants
+ON module1.recipient_id = participants.recipient_id
+JOIN training.questions
+ON module1.question_id = questions.question_id
+GROUP BY iteration, module, module1.question_id, definition1, definition2, definition3, definition4, definition5, question, answer
+ORDER BY iteration, question_id, answer;
+```
+
+## All Levels
+
+**Students were a little less certain of the fourth module. Interestingly, none felt that they strongly disagreed with any statement in the fourth module.**
+
+```{r module efficacy, echo = TRUE, collapse = TRUE, message = FALSE, warning = FALSE, fig.align="center", fig.width = 11, fig.height = 9}
+# Module 1
+module1_training <- module1_training %>% 
+  # Refactor to include the level indications
+  mutate(answer = ifelse(answer == 1, "Strongly \ndisagree",
+                  ifelse(answer == 2, "Somewhat \ndisagree",
+                  ifelse(answer == 3, "Neither agree \nnor disagree", 
+                  ifelse(answer == 4, "Somewhat \nagree", 
+                  ifelse(answer == 5, "Strongly \nagree", "NA"))))),
+         answer = fct_relevel(answer, "Strongly \nagree", "Somewhat \nagree", 
+                              "Neither agree \nnor disagree", 
+                              "Somewhat \ndisagree", "Strongly \ndisagree"),
+         iteration, fct_relevel(iteration, "Spring 2023", "Fall 2022", "Spring 2022")) %>% 
+  dplyr::select(iteration, question_id, question, answer, response) %>% 
+  # Counts the number of participants selecting each level for each question
+  group_by(question_id, question, answer) %>% 
+  summarize(response = sum(response))
+
+# Count the number of responses for that question
+sum_module1 <- module1_training %>% 
+  group_by(question) %>% 
+  summarize(total = sum(response)) %>% 
+  mutate(y = 1.1)
+  
+# Graph Modules 1
+module1_graph <- ggplot() +
+    geom_bar(aes(x = response, y = question, fill = answer), 
+             position = "fill", stat = "identity", data = module1_training) +
+    geom_text(aes(x = y, y = question, label = total), data = sum_module1) +
+    scale_x_continuous(labels = scales::percent) +
+    scale_fill_manual("Level of \nAgreement", 
+                 values = five_colors) +
+  xlab("") +
+  ylab("Module 1") +
+  theme_classic() +
+  theme(legend.position = "top",
+        axis.text.x = element_blank(),
+        axis.title.y = element_text(size = 12, color = "black"),
+        axis.text.y = element_text(size = 10, color = "black"),
+        legend.text = element_text(size = 10, color = "black"),
+        legend.title = element_text(size = 10, color = "black")) +
+  guides(fill = guide_legend(reverse = TRUE, nrow = 2))
+
+# Module 2
+module2_training <- module2_training %>% 
+  # Refactor to include the level indications
+  mutate(answer = ifelse(answer == 1, "Strongly \ndisagree",
+                  ifelse(answer == 2, "Somewhat \ndisagree",
+                  ifelse(answer == 3, "Neither agree \nnor disagree", 
+                  ifelse(answer == 4, "Somewhat \nagree", 
+                  ifelse(answer == 5, "Strongly \nagree", "NA"))))),
+         answer = fct_relevel(answer, "Strongly \nagree", "Somewhat \nagree", 
+                              "Neither agree \nnor disagree", 
+                              "Somewhat \ndisagree", "Strongly \ndisagree"),
+         iteration, fct_relevel(iteration, "Spring 2023", "Fall 2022", "Spring 2022")) %>% 
+  dplyr::select(iteration, question_id, question, answer, response) %>% 
+  # Counts the number of participants selecting each level for each question
+  group_by(question_id, question, answer) %>% 
+  summarize(response = sum(response))
+
+# Count the number of responses for that question
+sum_module2 <- module2_training %>% 
+  group_by(question) %>% 
+  summarize(total = sum(response)) %>% 
+  mutate(y = 1.1)
+  
+# Module 2 Graph
+module2_graph <- ggplot() +
+    geom_bar(aes(x = response, y = question, fill = answer), 
+             position = "fill", stat = "identity", data = module2_training) +
+    geom_text(aes(x = y, y = question, label = total), data = sum_module2) +
+    scale_x_continuous(labels = scales::percent) +
+    scale_fill_manual("Level of Agreement", 
+                 values = five_colors) +
+  xlab("") +
+  ylab("Module 2") +
+  theme_classic() +
+  theme(legend.position = "none",
+        axis.text.x = element_blank(),
+        axis.title.y = element_text(size = 12, color = "black"),
+        axis.text.y = element_text(size = 10, color = "black"),
+        legend.text = element_text(size = 10, color = "black"),
+        legend.title = element_text(size = 10, color = "black")) +
+  guides(fill = guide_legend(nrow = 2))
+
+# Module 3
+module3_training <- module3_training %>% 
+  # Refactor to include the level indications
+  mutate(answer = ifelse(answer == 1, "Strongly \ndisagree",
+                  ifelse(answer == 2, "Somewhat \ndisagree",
+                  ifelse(answer == 3, "Neither agree \nnor disagree", 
+                  ifelse(answer == 4, "Somewhat \nagree", 
+                  ifelse(answer == 5, "Strongly \nagree", "NA"))))),
+         answer = fct_relevel(answer, "Strongly \nagree", "Somewhat \nagree", 
+                              "Neither agree \nnor disagree", 
+                              "Somewhat \ndisagree", "Strongly \ndisagree"),
+         iteration, fct_relevel(iteration, "Spring 2023", "Fall 2022", "Spring 2022")) %>% 
+  dplyr::select(iteration, question_id, question, answer, response) %>% 
+  # Counts the number of participants selecting each level for each question
+  group_by(question_id, question, answer) %>% 
+  summarize(response = sum(response))
+
+# Count the number of responses for that question
+sum_module3 <- module3_training %>% 
+  group_by(question) %>% 
+  summarize(total = sum(response)) %>% 
+  mutate(y = 1.1)
+  
+# Module 3 Graph
+module3_graph <- ggplot() +
+    geom_bar(aes(x = response, y = question, fill = answer), 
+             position = "fill", stat = "identity", data = module3_training) +
+    geom_text(aes(x = y, y = question, label = total), data = sum_module3) +
+    scale_x_continuous(labels = scales::percent) +
+    scale_fill_manual("Level of Agreement", 
+                 values = five_colors) +
+  xlab("") +
+  ylab("Module 3") +
+  theme_classic() +
+  theme(legend.position = "none",
+        axis.text.x = element_blank(),
+        axis.title.y = element_text(size = 12, color = "black"),
+        axis.text.y = element_text(size = 10, color = "black"),
+        legend.text = element_text(size = 10, color = "black"),
+        legend.title = element_text(size = 10, color = "black")) +
+  guides(fill = guide_legend(nrow = 2))
+
+# Module 4
+module4_training <- module4_training %>% 
+  filter(answer != "NULL") %>% 
+  # Refactor to include the level indications
+  mutate(answer = ifelse(answer == 1, "Strongly \ndisagree",
+                  ifelse(answer == 2, "Somewhat \ndisagree",
+                  ifelse(answer == 3, "Neither agree \nnor disagree", 
+                  ifelse(answer == 4, "Somewhat \nagree", 
+                  ifelse(answer == 5, "Strongly \nagree", "NA"))))),
+         answer = fct_relevel(answer, "Strongly \nagree", "Somewhat \nagree", 
+                              "Neither agree \nnor disagree", 
+                              "Somewhat \ndisagree", "Strongly \ndisagree"),
+         iteration, fct_relevel(iteration, "Spring 2023", "Fall 2022", "Spring 2022")) %>% 
+  dplyr::select(iteration, question_id, question, answer, response) %>% 
+  # Counts the number of participants selecting each level for each question
+  group_by(question_id, question, answer) %>% 
+  summarize(response = sum(response))
+
+# Count the number of responses for that question
+sum_module4 <- module4_training %>% 
+  group_by(question) %>% 
+  summarize(total = sum(response)) %>% 
+  mutate(y = 1.1)
+  
+# Module 4 Graph
+module4_graph <- ggplot() +
+    geom_bar(aes(x = response, y = question, fill = answer), 
+             position = "fill", stat = "identity", data = module4_training) +
+    geom_text(aes(x = y, y = question, label = total), data = sum_module4) +
+  scale_x_continuous(labels = scales::percent) +
+    scale_fill_manual("Level of Agreement", 
+                 values = five_colors) +
+  xlab("") +
+  ylab("Module 4") +
+  theme_classic() +
+  theme(legend.position = "none",
+        axis.text.x = element_text(size = 12, color = "black"),
+        axis.text.y = element_text(size = 10, color = "black"),
+        axis.title.y = element_text(size = 12, color = "black"),
+        legend.text = element_text(size = 10, color = "black"),
+        legend.title = element_text(size = 10, color = "black")) +
+  guides(fill = guide_legend(nrow = 2))
+
+# Combine the four module responses
+plot_grid(module1_graph, module2_graph, module3_graph, module4_graph, 
+          ncol=1, align="v", rel_heights = c(2, 1.2, 1.2, 1.4))
+```
+
+---
+
+## Generalized to Disgree/Neutral/Agree
+
+**Students were a little less certain of the fourth module.**
+
+```{r module efficacy simpler, echo = TRUE, collapse = TRUE, message = FALSE, warning = FALSE, fig.align="center", fig.width = 11, fig.height = 9}
+# Module 1
+# Regroup into Agree, Neutral, and Disagree
+module1_simpler <- module1_training %>% 
+  mutate(answer = ifelse(answer == "Strongly \nagree" | 
+                         answer == "Somewhat \nagree", 
+                         "Agree",
+                  ifelse(answer == "Strongly \ndisagree" | 
+                         answer == "Somewhat \ndisagree", 
+                         "Disagree", "Neutral")),
+         answer = fct_relevel(answer, "Agree", "Neutral", "Disagree")) %>% 
+  # Recount
+  group_by(question_id, question, answer) %>% 
+  summarize(response = sum(response))
+
+# Module 1 Graph
+module1_simpler_graph <- ggplot() +
+    geom_bar(aes(x = response, y = question, fill = answer), 
+             position = "fill", stat = "identity", data = module1_simpler) +
+    geom_text(aes(x = y, y = question, label = total), data = sum_module1) +
+  scale_x_continuous(labels = scales::percent) +
+    scale_fill_manual("Level of Agreement", 
+                 values = three_colors) +
+  xlab("") +
+  ylab("Module 1") +
+  theme_classic() +
+  theme(legend.position = "top",
+        axis.text.x = element_blank(),
+        axis.title.y = element_text(size = 12, color = "black"),
+        axis.text.y = element_text(size = 10, color = "black"),
+        legend.text = element_text(size = 10, color = "black"),
+        legend.title = element_text(size = 10, color = "black")) +
+  guides(fill = guide_legend(reverse=TRUE))
+
+# Module 2
+# Regroup into Agree, Neutral, and Disagree
+module2_simpler <- module2_training %>% 
+  mutate(answer = ifelse(answer == "Strongly \nagree" | 
+                         answer == "Somewhat \nagree", 
+                         "Agree",
+                  ifelse(answer == "Strongly \ndisagree" | 
+                         answer == "Somewhat \ndisagree", 
+                         "Disagree", "Neutral")),
+         answer = fct_relevel(answer, "Agree", "Neutral", "Disagree")) %>% 
+  # Recount
+  group_by(question_id, question, answer) %>% 
+  summarize(response = sum(response))
+
+# Module 2 Graph
+module2_simpler_graph <- ggplot() +
+    geom_bar(aes(x = response, y = question, fill = answer), 
+             position = "fill", stat = "identity", data = module2_simpler) +
+    geom_text(aes(x = y, y = question, label = total), data = sum_module2) +
+    scale_x_continuous(labels = scales::percent) +
+    scale_fill_manual("Level of Agreement", 
+                 values = three_colors) +
+  xlab("") +
+  ylab("Module 2") +
+  theme_classic() +
+  theme(legend.position = "none",
+        axis.text.x = element_blank(),
+        axis.title.y = element_text(size = 12, color = "black"),
+        axis.text.y = element_text(size = 10, color = "black"),
+        legend.text = element_text(size = 10, color = "black"),
+        legend.title = element_text(size = 10, color = "black")) 
+
+# Module 3
+# Regroup into Agree, Neutral, and Disagree
+module3_simpler <- module3_training %>% 
+  mutate(answer = ifelse(answer == "Strongly \nagree" | 
+                         answer == "Somewhat \nagree", 
+                         "Agree",
+                  ifelse(answer == "Strongly \ndisagree" | 
+                         answer == "Somewhat \ndisagree", 
+                         "Disagree", "Neutral")),
+         answer = fct_relevel(answer, "Agree", "Neutral", "Disagree")) %>% 
+  # Recount
+  group_by(question_id, question, answer) %>% 
+  summarize(response = sum(response))
+
+# Module 3 Graph
+module3_simpler_graph <- ggplot() +
+    geom_bar(aes(x = response, y = question, fill = answer), 
+             position = "fill", stat = "identity", data = module3_simpler) +
+    geom_text(aes(x = y, y = question, label = total), data = sum_module3) +
+    scale_x_continuous(labels = scales::percent) +
+    scale_fill_manual("Level of Agreement", 
+                 values = three_colors) +
+  xlab("") +
+  ylab("Module 3") +
+  theme_classic() +
+  theme(legend.position = "none",
+        axis.text.x = element_blank(),
+        axis.title.y = element_text(size = 12, color = "black"),
+        axis.text.y = element_text(size = 10, color = "black"),
+        legend.text = element_text(size = 10, color = "black"),
+        legend.title = element_text(size = 10, color = "black"))
+
+# Module 4
+# Regroup into Agree, Neutral, and Disagree
+module4_simpler <- module4_training %>% 
+  mutate(answer = ifelse(answer == "Strongly \nagree" | 
+                         answer == "Somewhat \nagree", 
+                         "Agree",
+                  ifelse(answer == "Strongly \ndisagree" | 
+                         answer == "Somewhat \ndisagree", 
+                         "Disagree", "Neutral")),
+         answer = fct_relevel(answer, "Agree", "Neutral", "Disagree")) %>% 
+  # Recount
+  group_by(question_id, question, answer) %>% 
+  summarize(response = sum(response))
+
+# Module 4 Graph
+module4_simpler_graph <- ggplot() +
+    geom_bar(aes(x = response, y = question, fill = answer), 
+             position = "fill", stat = "identity", data = module4_simpler) +
+    geom_text(aes(x = y, y = question, label = total), data = sum_module4) +
+  scale_x_continuous(labels = scales::percent) +
+    scale_fill_manual("Level of Agreement", 
+                 values = three_colors) +
+  xlab("") +
+  ylab("Module 4") +
+  theme_classic() +
+  theme(legend.position = "none",
+        axis.text.x = element_text(size = 12, color = "black"),
+        axis.text.y = element_text(size = 10, color = "black"),
+        axis.title.y = element_text(size = 12, color = "black"),
+        legend.text = element_text(size = 10, color = "black"),
+        legend.title = element_text(size = 10, color = "black")) 
+
+# Combine the four module responses
+plot_grid(module1_simpler_graph, module2_simpler_graph, 
+          module3_simpler_graph, module4_simpler_graph, 
+          ncol=1, align="v", rel_heights = c(1.6, 1.2, 1.2, 1.4))
+```
+
+---
+
+
+
+# Spiders - Curiosity {.tabset}
+
+The post-training survey included statements of curiosity toward spiders where participants were asked to provide their level of agreement to each statement. 
+
+## Pre-Post - Individual Statements
+
+```sql
+SELECT pretest.recipient_id, iteration, pretest.question_id, question, answer_type, definition1, definition2, definition3, definition4, definition5, pretest.answer AS pre_answer, posttest.answer AS post_answer, posttest.answer-pretest.answer AS change
+FROM training.pretest
+JOIN training.posttest
+ON pretest.recipient_id = posttest.recipient_id AND pretest.question_id = posttest.question_id
+JOIN training.questions
+ON pretest.question_id = questions.question_id
+JOIN training.participants
+ON pretest.recipient_id = participants.recipient_id
+WHERE pretest.answer IS NOT NULL AND posttest.answer IS NOT NULL
+AND questions.question_type = 'Spider Curiosity'
+ORDER BY recipient_id, question_id;
+```
+
+```{r spider_curiosity_individual stats, include = FALSE}
+# Vector of question IDs
+question_ids <- paste0("prepost26_", 1:7)
+
+# Create summary table
+spider_curiosity_table <- purrr::map_dfr(question_ids, function(qid) {
+  data <- spider_curiosity_individual %>%
+    filter(question_id == qid)
+  
+  ttest <- t.test(data$pre_answer, data$post_answer, paired = TRUE)
+  p_val <- ttest$p.value
+  p_val_bonf <- p.adjust(p_val, method = "bonferroni", n = length(question_ids))
+  
+  tibble::tibble(
+    question_id = qid,
+    question = unique(data$question),
+    n = nrow(data),
+    pre_mean = round(mean(data$pre_answer), 3),
+    pre_se = round(plotrix::std.error(data$pre_answer), 3),
+    post_mean = round(mean(data$post_answer), 3),
+    post_se = round(plotrix::std.error(data$post_answer), 3),
+    p_value = round(p_val, 3),
+    p_value_bonferroni = round(p_val_bonf, 3)
+  )
+})
+
+```
+
+```{r spider_curiosity_individual graph, echo = TRUE, collapse = TRUE, message = FALSE, warning = FALSE, fig.align="center", fig.width = 11, fig.height = 7}
+spider_curiosity_individual_sum <- spider_curiosity_individual %>% 
+  group_by(question_id, question) %>% 
+  summarize(mean_change = mean(change),
+            se_change = plotrix::std.error(change)) %>% 
+  mutate(y = 1.2,
+         y2 = 1,
+         question = factor(question),
+         question = fct_relevel(question,
+                                "I would like to read more about spiders.",
+                                "I would like to know more about spiders.", 
+                                "I would like to know more about how scientists study spiders.",
+                                "Greater attention should be given to spider protection.",
+                                "Spiders are interesting animals.", 
+                                "People should use fewer chemicals in order to allow spiders to live.",
+                                "I would like to watch a spider constructing its web."))
+
+spider_curiosity_individual_sum$stats <- c("", "", "", ". / NS", "", "", "")
+spider_curiosity_individual_sum$post_mean <- spider_curiosity_table$post_mean
+
+spider_curiosity_individual_sum %>% 
+  ggplot() +
+  geom_point(aes(x = mean_change, y = question, color = question)) +
+  geom_errorbar(aes(xmax = mean_change + 1.96 * se_change, 
+                    xmin = mean_change - 1.96 * se_change, 
+                    y = question, color = question), width = 0.25) +
+  geom_vline(xintercept = 0, linetype = "dashed") +
+  geom_text(aes(x = y2, y = question, label = stats, 
+                color = question), size = 4) +
+  geom_text(aes(x = y, y = question, label = post_mean, 
+                color = question), size = 3) +
+  scale_x_continuous(limits = c(-0.7, 1.3), breaks = c(seq(-0.5, 1, 0.5))) +
+  scale_color_manual(values = c("black", "black", "black", "#7570b3", "black", "black", "black")) +
+  ylab("") +
+  xlab("Change toward disagreement ------------- Change toward agreement") +
+  theme_classic() +
+  theme(legend.position = "none",
+        axis.text.y = element_text(size = 10, color = "black"),
+        axis.text.x = element_text(size = 10, color = "black"),
+        axis.title.x = element_text(size = 10, color = "black"))
+```
+
+## ELE vs Modules Only - Composite Score

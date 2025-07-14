@@ -1,0 +1,2633 @@
+---
+title: "Analysis of WEBS Data"
+author: "Brandi Pessman"
+date: "`r Sys.Date()`"
+output:
+  html_document: 
+    theme: "journal"
+    toc: true
+    toc_depth: 3
+    toc_float: true
+    code_folding: hide
+---
+
+```{r libraries and import, echo = TRUE, results = 'hide', collapse = TRUE, message = FALSE, warning = FALSE}
+# Libraries
+library(tidyverse)
+library(cowplot)
+
+# Color palette
+three_colors = c("#1b9e77", "#785ef0", "#e6ab02")
+four_colors = c("#1b9e77", "#d95f02", "#7570b3", "#e7298a")
+five_colors = c("#1b9e77", "#d95f02", "#7570b3", "#e7298a", "#e6ab02")
+six_colors = c("#1b9e77", "#d95f02", "#7570b3", "#e7298a", "#e6ab02", "#66a61e")
+
+# Modules Completed
+participation_counts_modules <-
+  read.csv("query_outputs/participation_counts_modules.csv") 
+participants <- 
+  read.csv("wrangled_data/SQL/participants.csv")
+module_survey_completion <- 
+  read.csv("query_outputs/module_survey_completion.csv")  %>% 
+  mutate(module1 = ifelse(module1 == "NULL", 0, 1),
+         module2 = ifelse(module2 == "NULL", 0, 1),
+         module3 = ifelse(module3 == "NULL", 0, 1),
+         module4 = ifelse(module4 == "NULL", 0, 1),
+         total = module1 + module2 + module3 + module4)
+module_survey_completion <- 
+  left_join(module_survey_completion, 
+            participation_counts_modules, 
+            by = "recipient_id") %>% 
+  mutate(post_self_reported = answer_count) %>% 
+  select(-iteration, -answer_count)
+module_survey_completion <- 
+  left_join(module_survey_completion, 
+            participants, 
+            by = "recipient_id") %>% 
+  select(-recipient_name)
+
+# Module Efficacy
+module1_training <- read.csv("query_outputs/module1_training.csv") 
+module2_training <- read.csv("query_outputs/module2_training.csv") 
+module3_training <- read.csv("query_outputs/module3_training.csv") 
+module4_training <- read.csv("query_outputs/module4_training.csv") 
+
+# Pre- vs Post-Training Survey
+pre_post <- read.csv("query_outputs/pre_post.csv") 
+
+# Arachnid Experience/ELE/Politics
+arachnid_experience <- 
+  read.csv("query_outputs/arachnid_experience.csv") %>% 
+  mutate(answer = ifelse(answer == 2, 0, 1),
+         question_id = fct_recode(question_id, 
+                                  "research" = "eval3_6_post_52",
+                                  "course" = "eval3_5_post_51")) %>% 
+  select(-definition_1, -definition_2, -question) %>% 
+  pivot_wider(names_from = question_id, values_from = answer)
+ele_participation <- 
+  read.csv("query_outputs/ele_participation.csv") %>% 
+  mutate(ele = ifelse(answer == "1", 1, 0)) %>% 
+  select(recipient_id, ele) 
+demographics_views <- 
+  read.csv("query_outputs/demographics.csv") %>% 
+  filter(question_id == 'post45') %>% 
+  mutate(political_views = ifelse(answer == 1, "Very liberal", 
+                           ifelse(answer == 2, "Liberal", 
+                           ifelse(answer == 3, "Somewhat liberal",
+                           ifelse(answer == 4, "Moderate",
+                           ifelse(answer == 5, "Somewhat conservative",
+                           ifelse(answer == 6, "Conservative",
+                           ifelse(answer == 7, "Very conservative", 
+                                  "NULL"))))))),
+         political_views = fct_relevel(political_views, 
+                                       "Very liberal", "Liberal", 
+                                       "Somewhat liberal", "Moderate", 
+                                       "Somewhat conservative", 
+                                       "Conservative", "Very conservative")) %>% 
+  select(recipient_id, political_views)
+demographics_party <- 
+  read.csv("query_outputs/demographics.csv") %>% 
+  filter(question_id == 'post46') %>% 
+  mutate(political_party = ifelse(answer == 1, "Republican", 
+                           ifelse(answer == 2, "Democrat", 
+                           ifelse(answer == 3, "Independent",
+                           ifelse(answer == 4, "Other", "NULL")))),
+         political_party = fct_relevel(political_party, 
+                                       "Democrat", "Republican", 
+                                       "Independent", "Other")) %>% 
+  select(recipient_id, political_party)
+arachnid_ele <- 
+  full_join(arachnid_experience, 
+            ele_participation, 
+            by = "recipient_id")
+politics <- 
+  full_join(demographics_views, 
+            demographics_party, 
+            by = "recipient_id")
+arachnid_ele_politics <-
+  full_join(arachnid_ele,
+            politics,
+            by = "recipient_id")
+
+# Attitudes Toward Spiders
+spider_attitudes <- left_join(
+  read.csv("query_outputs/spider_attitudes.csv"), 
+  arachnid_ele_politics, by = "recipient_id")
+spider_attitudes_yn <- read.csv("query_outputs/spider_attitudes_yn.csv") %>% 
+  mutate(answer = ifelse(answer == 2, 0, 1)) %>% 
+  select(-definition_1, -definition_2)
+spider_attitudes_yn <- left_join(spider_attitudes_yn, 
+                                 arachnid_ele_politics, 
+                                 by = "recipient_id")
+
+# Change in Spider Attitudes
+change_spider_attitudes <- left_join(
+  read.csv("query_outputs/change_spider_attitudes.csv"), 
+  arachnid_ele_politics, by = "recipient_id")
+
+# Attitudes Toward Sci-Comm
+confidence <- left_join(
+  read.csv("query_outputs/confidence2.csv"), 
+  arachnid_ele_politics, by = "recipient_id")
+
+# Change in Sci-Comm Interest
+change_confidence <- left_join(
+  read.csv("query_outputs/change_confidence.csv"), 
+  arachnid_ele_politics, by = "recipient_id")
+```
+
+# Modules Completed {.tabset}
+
+First, I wanted to see how many participants completed the workshop modules. I could achieve this in two different ways:
+
+* The number of surveys completed after each module
+
+* The number of self-reported (from the post-training survey) completed module workshops
+
+*The numbers on the bars represent the raw number of participants.*
+
+## Completed Module Surveys
+
+**Spring 2022 had the highest module survey completion.**
+
+```sql
+SELECT DISTINCT module1.recipient_id as module1, module2.recipient_id as module2, module3.recipient_id as module3, module4.recipient_id as module4
+FROM training.module1
+FULL JOIN training.module2
+ON module1.recipient_id = module2.recipient_id
+FULL JOIN training.module3
+ON module1.recipient_id = module2.recipient_id AND 
+	module2.recipient_id = module3.recipient_id AND
+	module1.recipient_id = module3.recipient_id
+FULL JOIN training.module4
+ON module1.recipient_id = module2.recipient_id AND 
+	module1.recipient_id = module3.recipient_id AND
+	module1.recipient_id = module4.recipient_id AND 
+	module2.recipient_id = module3.recipient_id AND
+	module2.recipient_id = module4.recipient_id AND 
+	module3.recipient_id = module4.recipient_id;
+```
+
+```{r modules completed, echo = TRUE, collapse = TRUE, message = FALSE, warning = FALSE, fig.align="center", fig.width = 7, fig.height = 5}
+# Counts the number of participants completing 1, 2, 3, or 4 modules
+iteration_count_survey <- module_survey_completion %>% 
+  group_by(iteration, total) %>% 
+  count() %>% 
+  # Orders data for the graph
+  mutate(total = factor(total),
+         total = fct_relevel(total, "4", "3", "2", "1"),
+         iteration = factor(iteration),
+         iteration = fct_relevel(iteration, 
+                                 "Spring 2023", "Fall 2022", "Spring 2022"))
+
+# Sets the positions for where to put the raw numebrs in the graph
+iteration_count_survey$position <- c(0.12, 0.36, 0.7, 0.05, 0.175, 
+                                     0.325, 0.65, 0.097, 0.24, 0.65)
+
+# Makes the graph
+iteration_count_survey %>% 
+  ggplot() +
+    geom_bar(aes(x = n, y = iteration, fill = total), 
+             position = "fill", stat = "identity") +
+    geom_text(aes(x = position, y = iteration, label = n)) +
+    scale_x_continuous(labels = scales::percent) +
+  scale_fill_manual("No. Modules Surveys Completed", 
+                 values = four_colors) +
+  xlab("") +
+  ylab("") +
+  theme_classic() +
+  theme(legend.position = "top",
+        axis.text = element_text(size = 12, color = "black"),
+        legend.text = element_text(size = 12, color = "black"),
+        legend.title = element_text(size = 12, color = "black")) +
+  guides(fill = guide_legend(reverse=TRUE))
+```
+
+---
+
+## Self-Reported in Post-Survey
+
+**Spring 2022 had the highest participation in the post-training survey.**
+
+```sql
+SELECT posttest.recipient_id, iteration, COUNT(answer) AS answer_count
+FROM training.posttest
+JOIN training.participants
+ON posttest.recipient_id = participants.recipient_id
+JOIN training.questions
+ON posttest.question_id = questions.question_id
+WHERE posttest.question_id LIKE 'participation%'
+AND posttest.question_id NOT LIKE 'participation5'
+GROUP BY posttest.recipient_id, iteration
+ORDER BY posttest.recipient_id;
+```
+
+```{r modules self-reported, echo = TRUE, collapse = TRUE, message = FALSE, warning = FALSE, fig.align="center", fig.width = 7, fig.height = 5}
+# Counts the number of participants self-reporting 1, 2, 3, or 4 modules
+iteration_count <- participation_counts_modules %>% 
+  group_by(iteration, answer_count) %>% 
+  count() %>% 
+  # Orders data for the graph
+  mutate(answer_count = factor(answer_count),
+         answer_count = fct_relevel(answer_count, "4", "3", "2", "1"),
+         iteration = factor(iteration),
+         iteration = fct_relevel(iteration, 
+                                 "Spring 2023", "Fall 2022", "Spring 2022"))
+
+# Sets the positions for where to put the raw numebrs in the graph
+iteration_count$position <- c(0.31, 0.81, 0.07, 0.57, 
+                              0.02, 0.09, 0.54, 0.98)
+
+# Makes the graph
+iteration_count %>% 
+  ggplot() +
+    geom_bar(aes(x = n, y = iteration, fill = answer_count), 
+             position = "fill", stat = "identity") +
+    geom_text(aes(x = position, y = iteration, label = n)) +
+    scale_x_continuous(labels = scales::percent) +
+  scale_fill_manual("No. Self-Reported Modules Completed", 
+                 values = four_colors) +
+  xlab("") +
+  ylab("") +
+  theme_classic() +
+  theme(legend.position = "top",
+        axis.text = element_text(size = 12, color = "black"),
+        legend.text = element_text(size = 12, color = "black"),
+        legend.title = element_text(size = 12, color = "black")) +
+  guides(fill = guide_legend(reverse=TRUE))
+```
+
+---
+
+# Module Efficacy  {.tabset}
+
+Next, I wanted to explore the surveys provided after each module to look at the effectiveness of the module. 
+
+*The numbers to the right indicate the number of survey responses associated with each statement.*
+
+```sql
+SELECT iteration, module, module1.question_id, definition1, definition2, definition3, definition4, definition5, question, answer, COUNT(module1.recipient_id) AS response
+FROM training.module1
+JOIN training.participants
+ON module1.recipient_id = participants.recipient_id
+JOIN training.questions
+ON module1.question_id = questions.question_id
+GROUP BY iteration, module, module1.question_id, definition1, definition2, definition3, definition4, definition5, question, answer
+ORDER BY iteration, question_id, answer;
+```
+
+## All Levels
+
+**Students were a little less certain of the fourth module. Interestingly, none felt that they strongly disagreed with any statement in the fourth module.**
+
+```{r module efficacy, echo = TRUE, collapse = TRUE, message = FALSE, warning = FALSE, fig.align="center", fig.width = 11, fig.height = 9}
+# Module 1
+module1_training <- module1_training %>% 
+  # Refactor to include the level indications
+  mutate(answer = ifelse(answer == 1, "Strongly \ndisagree",
+                  ifelse(answer == 2, "Somewhat \ndisagree",
+                  ifelse(answer == 3, "Neither agree \nnor disagree", 
+                  ifelse(answer == 4, "Somewhat \nagree", 
+                  ifelse(answer == 5, "Strongly \nagree", "NA"))))),
+         answer = fct_relevel(answer, "Strongly \nagree", "Somewhat \nagree", 
+                              "Neither agree \nnor disagree", 
+                              "Somewhat \ndisagree", "Strongly \ndisagree"),
+         iteration, fct_relevel(iteration, "Spring 2023", "Fall 2022", "Spring 2022")) %>% 
+  dplyr::select(iteration, question_id, question, answer, response) %>% 
+  # Counts the number of participants selecting each level for each question
+  group_by(question_id, question, answer) %>% 
+  summarize(response = sum(response))
+
+# Count the number of responses for that question
+sum_module1 <- module1_training %>% 
+  group_by(question) %>% 
+  summarize(total = sum(response)) %>% 
+  mutate(y = 1.1)
+  
+# Graph Modules 1
+module1_graph <- ggplot() +
+    geom_bar(aes(x = response, y = question, fill = answer), 
+             position = "fill", stat = "identity", data = module1_training) +
+    geom_text(aes(x = y, y = question, label = total), data = sum_module1) +
+    scale_x_continuous(labels = scales::percent) +
+    scale_fill_manual("Level of \nAgreement", 
+                 values = five_colors) +
+  xlab("") +
+  ylab("Module 1") +
+  theme_classic() +
+  theme(legend.position = "top",
+        axis.text.x = element_blank(),
+        axis.title.y = element_text(size = 12, color = "black"),
+        axis.text.y = element_text(size = 10, color = "black"),
+        legend.text = element_text(size = 10, color = "black"),
+        legend.title = element_text(size = 10, color = "black")) +
+  guides(fill = guide_legend(reverse = TRUE, nrow = 2))
+
+# Module 2
+module2_training <- module2_training %>% 
+  # Refactor to include the level indications
+  mutate(answer = ifelse(answer == 1, "Strongly \ndisagree",
+                  ifelse(answer == 2, "Somewhat \ndisagree",
+                  ifelse(answer == 3, "Neither agree \nnor disagree", 
+                  ifelse(answer == 4, "Somewhat \nagree", 
+                  ifelse(answer == 5, "Strongly \nagree", "NA"))))),
+         answer = fct_relevel(answer, "Strongly \nagree", "Somewhat \nagree", 
+                              "Neither agree \nnor disagree", 
+                              "Somewhat \ndisagree", "Strongly \ndisagree"),
+         iteration, fct_relevel(iteration, "Spring 2023", "Fall 2022", "Spring 2022")) %>% 
+  dplyr::select(iteration, question_id, question, answer, response) %>% 
+  # Counts the number of participants selecting each level for each question
+  group_by(question_id, question, answer) %>% 
+  summarize(response = sum(response))
+
+# Count the number of responses for that question
+sum_module2 <- module2_training %>% 
+  group_by(question) %>% 
+  summarize(total = sum(response)) %>% 
+  mutate(y = 1.1)
+  
+# Module 2 Graph
+module2_graph <- ggplot() +
+    geom_bar(aes(x = response, y = question, fill = answer), 
+             position = "fill", stat = "identity", data = module2_training) +
+    geom_text(aes(x = y, y = question, label = total), data = sum_module2) +
+    scale_x_continuous(labels = scales::percent) +
+    scale_fill_manual("Level of Agreement", 
+                 values = five_colors) +
+  xlab("") +
+  ylab("Module 2") +
+  theme_classic() +
+  theme(legend.position = "none",
+        axis.text.x = element_blank(),
+        axis.title.y = element_text(size = 12, color = "black"),
+        axis.text.y = element_text(size = 10, color = "black"),
+        legend.text = element_text(size = 10, color = "black"),
+        legend.title = element_text(size = 10, color = "black")) +
+  guides(fill = guide_legend(nrow = 2))
+
+# Module 3
+module3_training <- module3_training %>% 
+  # Refactor to include the level indications
+  mutate(answer = ifelse(answer == 1, "Strongly \ndisagree",
+                  ifelse(answer == 2, "Somewhat \ndisagree",
+                  ifelse(answer == 3, "Neither agree \nnor disagree", 
+                  ifelse(answer == 4, "Somewhat \nagree", 
+                  ifelse(answer == 5, "Strongly \nagree", "NA"))))),
+         answer = fct_relevel(answer, "Strongly \nagree", "Somewhat \nagree", 
+                              "Neither agree \nnor disagree", 
+                              "Somewhat \ndisagree", "Strongly \ndisagree"),
+         iteration, fct_relevel(iteration, "Spring 2023", "Fall 2022", "Spring 2022")) %>% 
+  dplyr::select(iteration, question_id, question, answer, response) %>% 
+  # Counts the number of participants selecting each level for each question
+  group_by(question_id, question, answer) %>% 
+  summarize(response = sum(response))
+
+# Count the number of responses for that question
+sum_module3 <- module3_training %>% 
+  group_by(question) %>% 
+  summarize(total = sum(response)) %>% 
+  mutate(y = 1.1)
+  
+# Module 3 Graph
+module3_graph <- ggplot() +
+    geom_bar(aes(x = response, y = question, fill = answer), 
+             position = "fill", stat = "identity", data = module3_training) +
+    geom_text(aes(x = y, y = question, label = total), data = sum_module3) +
+    scale_x_continuous(labels = scales::percent) +
+    scale_fill_manual("Level of Agreement", 
+                 values = five_colors) +
+  xlab("") +
+  ylab("Module 3") +
+  theme_classic() +
+  theme(legend.position = "none",
+        axis.text.x = element_blank(),
+        axis.title.y = element_text(size = 12, color = "black"),
+        axis.text.y = element_text(size = 10, color = "black"),
+        legend.text = element_text(size = 10, color = "black"),
+        legend.title = element_text(size = 10, color = "black")) +
+  guides(fill = guide_legend(nrow = 2))
+
+# Module 4
+module4_training <- module4_training %>% 
+  filter(answer != "NULL") %>% 
+  # Refactor to include the level indications
+  mutate(answer = ifelse(answer == 1, "Strongly \ndisagree",
+                  ifelse(answer == 2, "Somewhat \ndisagree",
+                  ifelse(answer == 3, "Neither agree \nnor disagree", 
+                  ifelse(answer == 4, "Somewhat \nagree", 
+                  ifelse(answer == 5, "Strongly \nagree", "NA"))))),
+         answer = fct_relevel(answer, "Strongly \nagree", "Somewhat \nagree", 
+                              "Neither agree \nnor disagree", 
+                              "Somewhat \ndisagree", "Strongly \ndisagree"),
+         iteration, fct_relevel(iteration, "Spring 2023", "Fall 2022", "Spring 2022")) %>% 
+  dplyr::select(iteration, question_id, question, answer, response) %>% 
+  # Counts the number of participants selecting each level for each question
+  group_by(question_id, question, answer) %>% 
+  summarize(response = sum(response))
+
+# Count the number of responses for that question
+sum_module4 <- module4_training %>% 
+  group_by(question) %>% 
+  summarize(total = sum(response)) %>% 
+  mutate(y = 1.1)
+  
+# Module 4 Graph
+module4_graph <- ggplot() +
+    geom_bar(aes(x = response, y = question, fill = answer), 
+             position = "fill", stat = "identity", data = module4_training) +
+    geom_text(aes(x = y, y = question, label = total), data = sum_module4) +
+  scale_x_continuous(labels = scales::percent) +
+    scale_fill_manual("Level of Agreement", 
+                 values = five_colors) +
+  xlab("") +
+  ylab("Module 4") +
+  theme_classic() +
+  theme(legend.position = "none",
+        axis.text.x = element_text(size = 12, color = "black"),
+        axis.text.y = element_text(size = 10, color = "black"),
+        axis.title.y = element_text(size = 12, color = "black"),
+        legend.text = element_text(size = 10, color = "black"),
+        legend.title = element_text(size = 10, color = "black")) +
+  guides(fill = guide_legend(nrow = 2))
+
+# Combine the four module responses
+plot_grid(module1_graph, module2_graph, module3_graph, module4_graph, 
+          ncol=1, align="v", rel_heights = c(2, 1.2, 1.2, 1.4))
+```
+
+---
+
+## Generalized to Disgree/Neutral/Agree
+
+**Students were a little less certain of the fourth module.**
+
+```{r module efficacy simpler, echo = TRUE, collapse = TRUE, message = FALSE, warning = FALSE, fig.align="center", fig.width = 11, fig.height = 9}
+# Module 1
+# Regroup into Agree, Neutral, and Disagree
+module1_simpler <- module1_training %>% 
+  mutate(answer = ifelse(answer == "Strongly \nagree" | 
+                         answer == "Somewhat \nagree", 
+                         "Agree",
+                  ifelse(answer == "Strongly \ndisagree" | 
+                         answer == "Somewhat \ndisagree", 
+                         "Disagree", "Neutral")),
+         answer = fct_relevel(answer, "Agree", "Neutral", "Disagree")) %>% 
+  # Recount
+  group_by(question_id, question, answer) %>% 
+  summarize(response = sum(response))
+
+# Module 1 Graph
+module1_simpler_graph <- ggplot() +
+    geom_bar(aes(x = response, y = question, fill = answer), 
+             position = "fill", stat = "identity", data = module1_simpler) +
+    geom_text(aes(x = y, y = question, label = total), data = sum_module1) +
+  scale_x_continuous(labels = scales::percent) +
+    scale_fill_manual("Level of Agreement", 
+                 values = three_colors) +
+  xlab("") +
+  ylab("Module 1") +
+  theme_classic() +
+  theme(legend.position = "top",
+        axis.text.x = element_blank(),
+        axis.title.y = element_text(size = 12, color = "black"),
+        axis.text.y = element_text(size = 10, color = "black"),
+        legend.text = element_text(size = 10, color = "black"),
+        legend.title = element_text(size = 10, color = "black")) +
+  guides(fill = guide_legend(reverse=TRUE))
+
+# Module 2
+# Regroup into Agree, Neutral, and Disagree
+module2_simpler <- module2_training %>% 
+  mutate(answer = ifelse(answer == "Strongly \nagree" | 
+                         answer == "Somewhat \nagree", 
+                         "Agree",
+                  ifelse(answer == "Strongly \ndisagree" | 
+                         answer == "Somewhat \ndisagree", 
+                         "Disagree", "Neutral")),
+         answer = fct_relevel(answer, "Agree", "Neutral", "Disagree")) %>% 
+  # Recount
+  group_by(question_id, question, answer) %>% 
+  summarize(response = sum(response))
+
+# Module 2 Graph
+module2_simpler_graph <- ggplot() +
+    geom_bar(aes(x = response, y = question, fill = answer), 
+             position = "fill", stat = "identity", data = module2_simpler) +
+    geom_text(aes(x = y, y = question, label = total), data = sum_module2) +
+    scale_x_continuous(labels = scales::percent) +
+    scale_fill_manual("Level of Agreement", 
+                 values = three_colors) +
+  xlab("") +
+  ylab("Module 2") +
+  theme_classic() +
+  theme(legend.position = "none",
+        axis.text.x = element_blank(),
+        axis.title.y = element_text(size = 12, color = "black"),
+        axis.text.y = element_text(size = 10, color = "black"),
+        legend.text = element_text(size = 10, color = "black"),
+        legend.title = element_text(size = 10, color = "black")) 
+
+# Module 3
+# Regroup into Agree, Neutral, and Disagree
+module3_simpler <- module3_training %>% 
+  mutate(answer = ifelse(answer == "Strongly \nagree" | 
+                         answer == "Somewhat \nagree", 
+                         "Agree",
+                  ifelse(answer == "Strongly \ndisagree" | 
+                         answer == "Somewhat \ndisagree", 
+                         "Disagree", "Neutral")),
+         answer = fct_relevel(answer, "Agree", "Neutral", "Disagree")) %>% 
+  # Recount
+  group_by(question_id, question, answer) %>% 
+  summarize(response = sum(response))
+
+# Module 3 Graph
+module3_simpler_graph <- ggplot() +
+    geom_bar(aes(x = response, y = question, fill = answer), 
+             position = "fill", stat = "identity", data = module3_simpler) +
+    geom_text(aes(x = y, y = question, label = total), data = sum_module3) +
+    scale_x_continuous(labels = scales::percent) +
+    scale_fill_manual("Level of Agreement", 
+                 values = three_colors) +
+  xlab("") +
+  ylab("Module 3") +
+  theme_classic() +
+  theme(legend.position = "none",
+        axis.text.x = element_blank(),
+        axis.title.y = element_text(size = 12, color = "black"),
+        axis.text.y = element_text(size = 10, color = "black"),
+        legend.text = element_text(size = 10, color = "black"),
+        legend.title = element_text(size = 10, color = "black"))
+
+# Module 4
+# Regroup into Agree, Neutral, and Disagree
+module4_simpler <- module4_training %>% 
+  mutate(answer = ifelse(answer == "Strongly \nagree" | 
+                         answer == "Somewhat \nagree", 
+                         "Agree",
+                  ifelse(answer == "Strongly \ndisagree" | 
+                         answer == "Somewhat \ndisagree", 
+                         "Disagree", "Neutral")),
+         answer = fct_relevel(answer, "Agree", "Neutral", "Disagree")) %>% 
+  # Recount
+  group_by(question_id, question, answer) %>% 
+  summarize(response = sum(response))
+
+# Module 4 Graph
+module4_simpler_graph <- ggplot() +
+    geom_bar(aes(x = response, y = question, fill = answer), 
+             position = "fill", stat = "identity", data = module4_simpler) +
+    geom_text(aes(x = y, y = question, label = total), data = sum_module4) +
+  scale_x_continuous(labels = scales::percent) +
+    scale_fill_manual("Level of Agreement", 
+                 values = three_colors) +
+  xlab("") +
+  ylab("Module 4") +
+  theme_classic() +
+  theme(legend.position = "none",
+        axis.text.x = element_text(size = 12, color = "black"),
+        axis.text.y = element_text(size = 10, color = "black"),
+        axis.title.y = element_text(size = 12, color = "black"),
+        legend.text = element_text(size = 10, color = "black"),
+        legend.title = element_text(size = 10, color = "black")) 
+
+# Combine the four module responses
+plot_grid(module1_simpler_graph, module2_simpler_graph, 
+          module3_simpler_graph, module4_simpler_graph, 
+          ncol=1, align="v", rel_heights = c(1.6, 1.2, 1.2, 1.4))
+```
+
+---
+
+# Pre- vs Post- Surveys
+
+There were 19 statements that were surveyed before and after the NESA training.
+
+I compared pre- and post-survey responses using a paired t-test, including only participants that completed both surveys (n = 66 to 68).
+
+*Points/error bars = mean ± 95% CI. The printed number is the post-training average value (1 = strongly disagree, 5 = strongly agree).* 
+
+<span style="color:#7570b3">Purple indicates P < 0.1 before Bonferroni correction.</span>
+
+<span style="color:#d95f02">Orange indicates P < 0.1 additionally after Bonferroni correction.</span>
+
+*Asterisks represent the P-value before / after Bonferroni correction (19 Statements):*
+
+- *** P < 0.001
+
+- ** P < 0.01
+
+- \* P < 0.05
+
+- . P < 0.1
+
+```sql
+select pretest.recipient_id, iteration, pretest.question_id, question, answer_type, definition_1, definition_2, definition_3, definition_4, definition_5, pretest.answer as pre_answer, posttest.answer as post_answer
+FROM training.pretest
+JOIN training.posttest
+ON pretest.recipient_id = posttest.recipient_id AND pretest.question_id = posttest.question_id
+JOIN training.questions
+ON pretest.question_id = questions.question_id
+JOIN training.participants
+ON pretest.recipient_id = participants.recipient_id
+WHERE pretest.answer IS NOT NULL AND posttest.answer IS NOT NULL
+AND pretest.question_id NOT LIKE 'prepost3_%'
+ORDER BY question_id;
+```
+
+* **Improvement in perceived abilities as science communicator after training.** 
+
+* **Improved perception of public understanding of science after training.**
+
+* **Trend toward improved impact of previous training after NESA.**
+
+```{r pre post stats, include = FALSE}
+options(scipen = 999)
+
+statement <- pre_post %>% 
+  filter(question_id == "prepost10")
+paste0("Question 10: ", unique(statement$question))
+paste0("Sample Size: ", nrow(statement))
+paste0("Mean ± SE pre score: ", 
+       round(mean(statement$pre_answer), 3), 
+       " ± ", 
+       round(plotrix::std.error(statement$pre_answer), 3))
+paste0("Mean ± SE post score: ", 
+       round(mean(statement$post_answer), 3), 
+       " ± ", 
+       round(plotrix::std.error(statement$post_answer), 3))
+paste0("P-value before Bonferroni correction: P = ", 
+       round(t.test(x = statement$pre_answer, 
+                    y = statement$post_answer, 
+              paired = TRUE)$p.value, 8))
+paste0("P-value after Bonferroni correction (n=19): P = ", 
+       round(p.adjust(t.test(x = statement$pre_answer, 
+                             y = statement$post_answer, 
+                       paired = TRUE)$p.value, method = "bonferroni", n = 19), 8))
+# *** + / ***
+
+statement <- pre_post %>% 
+  filter(question_id == "prepost11")
+paste0("Question 11: ", unique(statement$question))
+paste0("Sample Size: ", nrow(statement))
+paste0("Mean ± SE pre score: ", 
+       round(mean(statement$pre_answer), 3), 
+       " ± ", 
+       round(plotrix::std.error(statement$pre_answer), 3))
+paste0("Mean ± SE post score: ", 
+       round(mean(statement$post_answer), 3), 
+       " ± ", 
+       round(plotrix::std.error(statement$post_answer), 3))
+paste0("P-value before Bonferroni correction: P = ", 
+       round(t.test(x = statement$pre_answer, 
+                    y = statement$post_answer, 
+              paired = TRUE)$p.value, 12))
+paste0("P-value after Bonferroni correction (n=19): P = ", 
+       round(p.adjust(t.test(x = statement$pre_answer, 
+                             y = statement$post_answer, 
+                       paired = TRUE)$p.value, method = "bonferroni", n = 19), 12))
+# *** + / ***
+
+statement <- pre_post %>% 
+  filter(question_id == "prepost12")
+paste0("Question 12: ", unique(statement$question))
+paste0("Sample Size: ", nrow(statement))
+paste0("Mean ± SE pre score: ", 
+       round(mean(statement$pre_answer), 3), 
+       " ± ", 
+       round(plotrix::std.error(statement$pre_answer), 3))
+paste0("Mean ± SE post score: ", 
+       round(mean(statement$post_answer), 3), 
+       " ± ", 
+       round(plotrix::std.error(statement$post_answer), 3))
+paste0("P-value before Bonferroni correction: P = ", 
+       round(t.test(x = statement$pre_answer, 
+                    y = statement$post_answer, 
+              paired = TRUE)$p.value, 3))
+paste0("P-value after Bonferroni correction (n=19): P = ", 
+       round(p.adjust(t.test(x = statement$pre_answer, 
+                             y = statement$post_answer, 
+                       paired = TRUE)$p.value, method = "bonferroni", n = 19), 3))
+# . - / NS
+
+statement <- pre_post %>% 
+  filter(question_id == "prepost13")
+paste0("Question 13: ", unique(statement$question))
+paste0("Sample Size: ", nrow(statement))
+paste0("Mean ± SE pre score: ", 
+       round(mean(statement$pre_answer), 3), 
+       " ± ", 
+       round(plotrix::std.error(statement$pre_answer), 3))
+paste0("Mean ± SE post score: ", 
+       round(mean(statement$post_answer), 3), 
+       " ± ", 
+       round(plotrix::std.error(statement$post_answer), 3))
+paste0("P-value before Bonferroni correction: P = ", 
+       round(t.test(x = statement$pre_answer, 
+                    y = statement$post_answer, 
+              paired = TRUE)$p.value, 3))
+paste0("P-value after Bonferroni correction (n=19): P = ", 
+       round(p.adjust(t.test(x = statement$pre_answer, 
+                             y = statement$post_answer, 
+                       paired = TRUE)$p.value, method = "bonferroni", n = 19), 3))
+# ** - / .
+
+statement <- pre_post %>% 
+  filter(question_id == "prepost14_1")
+paste0("Question 14.1: ", unique(statement$question))
+paste0("Sample Size: ", nrow(statement))
+paste0("Mean ± SE pre score: ", 
+       round(mean(statement$pre_answer), 3), 
+       " ± ", 
+       round(plotrix::std.error(statement$pre_answer), 3))
+paste0("Mean ± SE post score: ", 
+       round(mean(statement$post_answer), 3), 
+       " ± ", 
+       round(plotrix::std.error(statement$post_answer), 3))
+paste0("P-value before Bonferroni correction: P = ", 
+       round(t.test(x = statement$pre_answer, 
+                    y = statement$post_answer, 
+              paired = TRUE)$p.value, 8))
+paste0("P-value after Bonferroni correction (n=19): P = ", 
+       round(p.adjust(t.test(x = statement$pre_answer, 
+                             y = statement$post_answer, 
+                       paired = TRUE)$p.value, method = "bonferroni", n = 19), 8))
+# *** + / ***
+
+statement <- pre_post %>% 
+  filter(question_id == "prepost14_2")
+paste0("Question 14.2: ", unique(statement$question))
+paste0("Sample Size: ", nrow(statement))
+paste0("Mean ± SE pre score: ", 
+       round(mean(statement$pre_answer), 3), 
+       " ± ", 
+       round(plotrix::std.error(statement$pre_answer), 3))
+paste0("Mean ± SE post score: ", 
+       round(mean(statement$post_answer), 3), 
+       " ± ", 
+       round(plotrix::std.error(statement$post_answer), 3))
+paste0("P-value before Bonferroni correction: P = ", 
+       round(t.test(x = statement$pre_answer, 
+                    y = statement$post_answer, 
+              paired = TRUE)$p.value, 8))
+paste0("P-value after Bonferroni correction (n=19): P = ", 
+       round(p.adjust(t.test(x = statement$pre_answer, 
+                             y = statement$post_answer, 
+                       paired = TRUE)$p.value, method = "bonferroni", n = 19), 8))
+
+statement <- pre_post %>% 
+  filter(question_id == "prepost14_3")
+paste0("Question 14.3: ", unique(statement$question))
+paste0("Sample Size: ", nrow(statement))
+paste0("Mean ± SE pre score: ", 
+       round(mean(statement$pre_answer), 3), 
+       " ± ", 
+       round(plotrix::std.error(statement$pre_answer), 3))
+paste0("Mean ± SE post score: ", 
+       round(mean(statement$post_answer), 3), 
+       " ± ", 
+       round(plotrix::std.error(statement$post_answer), 3))
+paste0("P-value before Bonferroni correction: P = ", 
+       round(t.test(x = statement$pre_answer, 
+                    y = statement$post_answer, 
+              paired = TRUE)$p.value, 8))
+paste0("P-value after Bonferroni correction (n=19): P = ", 
+       round(p.adjust(t.test(x = statement$pre_answer, 
+                             y = statement$post_answer, 
+                       paired = TRUE)$p.value, method = "bonferroni", n = 19), 8))
+
+statement <- pre_post %>% 
+  filter(question_id == "prepost14_4")
+paste0("Question 14.4: ", unique(statement$question))
+paste0("Sample Size: ", nrow(statement))
+paste0("Mean ± SE pre score: ", 
+       round(mean(statement$pre_answer), 3), 
+       " ± ", 
+       round(plotrix::std.error(statement$pre_answer), 3))
+paste0("Mean ± SE post score: ", 
+       round(mean(statement$post_answer), 3), 
+       " ± ", 
+       round(plotrix::std.error(statement$post_answer), 3))
+paste0("P-value before Bonferroni correction: P = ", 
+       round(t.test(x = statement$pre_answer, 
+                    y = statement$post_answer, 
+              paired = TRUE)$p.value, 8))
+paste0("P-value after Bonferroni correction (n=19): P = ", 
+       round(p.adjust(t.test(x = statement$pre_answer, 
+                             y = statement$post_answer, 
+                       paired = TRUE)$p.value, method = "bonferroni", n = 19), 8))
+
+statement <- pre_post %>% 
+  filter(question_id == "prepost7_1")
+paste0("Question 7.1: ", unique(statement$question))
+paste0("Sample Size: ", nrow(statement))
+paste0("Mean ± SE pre score: ", 
+       round(mean(statement$pre_answer), 3), 
+       " ± ", 
+       round(plotrix::std.error(statement$pre_answer), 3))
+paste0("Mean ± SE post score: ", 
+       round(mean(statement$post_answer), 3), 
+       " ± ", 
+       round(plotrix::std.error(statement$post_answer), 3))
+paste0("P-value before Bonferroni correction: P = ", 
+       round(t.test(x = statement$pre_answer, 
+                    y = statement$post_answer, 
+              paired = TRUE)$p.value, 8))
+paste0("P-value after Bonferroni correction (n=19): P = ", 
+       round(p.adjust(t.test(x = statement$pre_answer, 
+                             y = statement$post_answer, 
+                       paired = TRUE)$p.value, method = "bonferroni", n = 19), 8))
+
+statement <- pre_post %>% 
+  filter(question_id == "prepost7_2")
+paste0("Question 7.2: ", unique(statement$question))
+paste0("Sample Size: ", nrow(statement))
+paste0("Mean ± SE pre score: ", 
+       round(mean(statement$pre_answer), 3), 
+       " ± ", 
+       round(plotrix::std.error(statement$pre_answer), 3))
+paste0("Mean ± SE post score: ", 
+       round(mean(statement$post_answer), 3), 
+       " ± ", 
+       round(plotrix::std.error(statement$post_answer), 3))
+paste0("P-value before Bonferroni correction: P = ", 
+       round(t.test(x = statement$pre_answer, 
+                    y = statement$post_answer, 
+              paired = TRUE)$p.value, 8))
+paste0("P-value after Bonferroni correction (n=19): P = ", 
+       round(p.adjust(t.test(x = statement$pre_answer, 
+                             y = statement$post_answer, 
+                       paired = TRUE)$p.value, method = "bonferroni", n = 19), 8))
+
+statement <- pre_post %>% 
+  filter(question_id == "prepost7_3")
+paste0("Question 7.3: ", unique(statement$question))
+paste0("Sample Size: ", nrow(statement))
+paste0("Mean ± SE pre score: ", 
+       round(mean(statement$pre_answer), 3), 
+       " ± ", 
+       round(plotrix::std.error(statement$pre_answer), 3))
+paste0("Mean ± SE post score: ", 
+       round(mean(statement$post_answer), 3), 
+       " ± ", 
+       round(plotrix::std.error(statement$post_answer), 3))
+paste0("P-value before Bonferroni correction: P = ", 
+       round(t.test(x = statement$pre_answer, 
+                    y = statement$post_answer, 
+              paired = TRUE)$p.value, 8))
+paste0("P-value after Bonferroni correction (n=19): P = ", 
+       round(p.adjust(t.test(x = statement$pre_answer, 
+                             y = statement$post_answer, 
+                       paired = TRUE)$p.value, method = "bonferroni", n = 19), 8))
+
+statement <- pre_post %>% 
+  filter(question_id == "prepost7_4")
+paste0("Question 7.4: ", unique(statement$question))
+paste0("Sample Size: ", nrow(statement))
+paste0("Mean ± SE pre score: ", 
+       round(mean(statement$pre_answer), 3), 
+       " ± ", 
+       round(plotrix::std.error(statement$pre_answer), 3))
+paste0("Mean ± SE post score: ", 
+       round(mean(statement$post_answer), 3), 
+       " ± ", 
+       round(plotrix::std.error(statement$post_answer), 3))
+paste0("P-value before Bonferroni correction: P = ", 
+       round(t.test(x = statement$pre_answer, 
+                    y = statement$post_answer, 
+              paired = TRUE)$p.value, 8))
+paste0("P-value after Bonferroni correction (n=19): P = ", 
+       round(p.adjust(t.test(x = statement$pre_answer, 
+                             y = statement$post_answer, 
+                       paired = TRUE)$p.value, method = "bonferroni", n = 19), 8))
+
+statement <- pre_post %>% 
+  filter(question_id == "prepost7_5")
+paste0("Question 7.5: ", unique(statement$question))
+paste0("Sample Size: ", nrow(statement))
+paste0("Mean ± SE pre score: ", 
+       round(mean(statement$pre_answer), 3), 
+       " ± ", 
+       round(plotrix::std.error(statement$pre_answer), 3))
+paste0("Mean ± SE post score: ", 
+       round(mean(statement$post_answer), 3), 
+       " ± ", 
+       round(plotrix::std.error(statement$post_answer), 3))
+paste0("P-value before Bonferroni correction: P = ", 
+       round(t.test(x = statement$pre_answer, 
+                    y = statement$post_answer, 
+              paired = TRUE)$p.value, 8))
+paste0("P-value after Bonferroni correction (n=19): P = ", 
+       round(p.adjust(t.test(x = statement$pre_answer, 
+                             y = statement$post_answer, 
+                       paired = TRUE)$p.value, method = "bonferroni", n = 19), 8))
+
+statement <- pre_post %>% 
+  filter(question_id == "prepost7_6")
+paste0("Question 7.6: ", unique(statement$question))
+paste0("Sample Size: ", nrow(statement))
+paste0("Mean ± SE pre score: ", 
+       round(mean(statement$pre_answer), 3), 
+       " ± ", 
+       round(plotrix::std.error(statement$pre_answer), 3))
+paste0("Mean ± SE post score: ", 
+       round(mean(statement$post_answer), 3), 
+       " ± ", 
+       round(plotrix::std.error(statement$post_answer), 3))
+paste0("P-value before Bonferroni correction: P = ", 
+       round(t.test(x = statement$pre_answer, 
+                    y = statement$post_answer, 
+              paired = TRUE)$p.value, 8))
+paste0("P-value after Bonferroni correction (n=19): P = ", 
+       round(p.adjust(t.test(x = statement$pre_answer, 
+                             y = statement$post_answer, 
+                       paired = TRUE)$p.value, method = "bonferroni", n = 19), 8))
+
+statement <- pre_post %>% 
+  filter(question_id == "prepost8_1")
+paste0("Question 8.1: ", unique(statement$question))
+paste0("Sample Size: ", nrow(statement))
+paste0("Mean ± SE pre score: ", 
+       round(mean(statement$pre_answer), 3), 
+       " ± ", 
+       round(plotrix::std.error(statement$pre_answer), 3))
+paste0("Mean ± SE post score: ", 
+       round(mean(statement$post_answer), 3), 
+       " ± ", 
+       round(plotrix::std.error(statement$post_answer), 3))
+paste0("P-value before Bonferroni correction: P = ", 
+       round(t.test(x = statement$pre_answer, 
+                    y = statement$post_answer, 
+              paired = TRUE)$p.value, 8))
+paste0("P-value after Bonferroni correction (n=19): P = ", 
+       round(p.adjust(t.test(x = statement$pre_answer, 
+                             y = statement$post_answer, 
+                       paired = TRUE)$p.value, method = "bonferroni", n = 19), 8))
+
+statement <- pre_post %>% 
+  filter(question_id == "prepost8_2")
+paste0("Question 8.2: ", unique(statement$question))
+paste0("Sample Size: ", nrow(statement))
+paste0("Mean ± SE pre score: ", 
+       round(mean(statement$pre_answer), 3), 
+       " ± ", 
+       round(plotrix::std.error(statement$pre_answer), 3))
+paste0("Mean ± SE post score: ", 
+       round(mean(statement$post_answer), 3), 
+       " ± ", 
+       round(plotrix::std.error(statement$post_answer), 3))
+paste0("P-value before Bonferroni correction: P = ", 
+       round(t.test(x = statement$pre_answer, 
+                    y = statement$post_answer, 
+              paired = TRUE)$p.value, 8))
+paste0("P-value after Bonferroni correction (n=19): P = ", 
+       round(p.adjust(t.test(x = statement$pre_answer, 
+                             y = statement$post_answer, 
+                       paired = TRUE)$p.value, method = "bonferroni", n = 19), 8))
+
+statement <- pre_post %>% 
+  filter(question_id == "prepost8_3")
+paste0("Question 8.3: ", unique(statement$question))
+paste0("Sample Size: ", nrow(statement))
+paste0("Mean ± SE pre score: ", 
+       round(mean(statement$pre_answer), 3), 
+       " ± ", 
+       round(plotrix::std.error(statement$pre_answer), 3))
+paste0("Mean ± SE post score: ", 
+       round(mean(statement$post_answer), 3), 
+       " ± ", 
+       round(plotrix::std.error(statement$post_answer), 3))
+paste0("P-value before Bonferroni correction: P = ", 
+       round(t.test(x = statement$pre_answer, 
+                    y = statement$post_answer, 
+              paired = TRUE)$p.value, 8))
+paste0("P-value after Bonferroni correction (n=19): P = ", 
+       round(p.adjust(t.test(x = statement$pre_answer, 
+                             y = statement$post_answer, 
+                       paired = TRUE)$p.value, method = "bonferroni", n = 19), 8))
+
+statement <- pre_post %>% 
+  filter(question_id == "prepost8_4")
+paste0("Question 8.4: ", unique(statement$question))
+paste0("Sample Size: ", nrow(statement))
+paste0("Mean ± SE pre score: ", 
+       round(mean(statement$pre_answer), 3), 
+       " ± ", 
+       round(plotrix::std.error(statement$pre_answer), 3))
+paste0("Mean ± SE post score: ", 
+       round(mean(statement$post_answer), 3), 
+       " ± ", 
+       round(plotrix::std.error(statement$post_answer), 3))
+paste0("P-value before Bonferroni correction: P = ", 
+       round(t.test(x = statement$pre_answer, 
+                    y = statement$post_answer, 
+              paired = TRUE)$p.value, 8))
+paste0("P-value after Bonferroni correction (n=19): P = ", 
+       round(p.adjust(t.test(x = statement$pre_answer, 
+                             y = statement$post_answer, 
+                       paired = TRUE)$p.value, method = "bonferroni", n = 19), 8))
+
+statement <- pre_post %>% 
+  filter(question_id == "prepost8_5")
+paste0("Question 8.5: ", unique(statement$question))
+paste0("Sample Size: ", nrow(statement))
+paste0("Mean ± SE pre score: ", 
+       round(mean(statement$pre_answer), 3), 
+       " ± ", 
+       round(plotrix::std.error(statement$pre_answer), 3))
+paste0("Mean ± SE post score: ", 
+       round(mean(statement$post_answer), 3), 
+       " ± ", 
+       round(plotrix::std.error(statement$post_answer), 3))
+paste0("P-value before Bonferroni correction: P = ", 
+       round(t.test(x = statement$pre_answer, 
+                    y = statement$post_answer, 
+              paired = TRUE)$p.value, 8))
+paste0("P-value after Bonferroni correction (n=19): P = ", 
+       round(p.adjust(t.test(x = statement$pre_answer, 
+                             y = statement$post_answer, 
+                       paired = TRUE)$p.value, method = "bonferroni", n = 19), 8))
+```
+
+```{r pre post scale, echo = TRUE, collapse = TRUE, message = FALSE, warning = FALSE, fig.align="center", fig.width = 11, fig.height = 12}
+# Statement 10
+pre_post_10_selected <- pre_post %>% 
+  filter(question_id == 'prepost10') %>% 
+  mutate(change = post_answer - pre_answer) %>% 
+  group_by(question_id, question) %>% 
+  summarize(mean_change = mean(change),
+            se_change = plotrix::std.error(change)) %>% 
+  mutate(y = 1.2,
+         y2 = 1, 
+         post_mean = 3.96, 
+         stats = "*** / ***",
+         question = "How good are you at science communication?") %>% 
+  ggplot() +
+  geom_point(aes(x = mean_change, y = question), color = "#d95f02") +
+  geom_errorbar(aes(xmax = mean_change + 1.96 * se_change, 
+                    xmin = mean_change - 1.96 * se_change, 
+                    y = question), width = 0.25, color = "#d95f02") +
+  geom_vline(xintercept = 0, linetype = "dashed", color = "black") +
+  geom_text(aes(x = y2, y = question, label = stats), 
+            size = 4, color = "#d95f02") +
+  geom_text(aes(x = y, y = question, label = post_mean), 
+            size = 3, color = "#d95f02") +
+  scale_x_continuous(limits = c(-0.7, 1.3), breaks = c(seq(-0.5, 1, 0.5))) +
+  ylab("") +
+  xlab("Change toward 'not at all good' ------------------ Change toward 'very good'") +
+  theme_classic() +
+  theme(legend.position = "none",
+        axis.text.y = element_text(size = 10, color = "black"),
+        axis.text.x = element_blank(),
+        axis.title.x = element_text(size = 10, color = "black"))
+
+# Statement 11
+pre_post_11_selected <- pre_post %>% 
+  filter(question_id == 'prepost11') %>% 
+  mutate(change = post_answer - pre_answer) %>% 
+  group_by(question_id, question) %>% 
+  summarize(mean_change = mean(change),
+            se_change = plotrix::std.error(change)) %>% 
+  mutate(y = 1.2,
+         y2 = 1, 
+         post_mean = 3.85, 
+         stats = "*** / ***",
+         question = "How well does the public understand your \nscience when you communicate it to them?") %>% 
+  ggplot() +
+  geom_point(aes(x = mean_change, y = question), color = "#d95f02") +
+  geom_errorbar(aes(xmax = mean_change + 1.96 * se_change, 
+                    xmin = mean_change - 1.96 * se_change, 
+                    y = question), width = 0.25, color = "#d95f02") +
+  geom_vline(xintercept = 0, linetype = "dashed", color = "black") +
+  geom_text(aes(x = y2, y = question, label = stats), 
+            size = 4, color = "#d95f02") +
+  geom_text(aes(x = y, y = question, label = post_mean), 
+            size = 3, color = "#d95f02") +
+  scale_x_continuous(limits = c(-0.7, 1.3), breaks = c(seq(-0.5, 1, 0.5))) +
+  ylab("") +
+  xlab("Change toward less understanding --- Change toward more understanding") +
+  theme_classic() +
+  theme(legend.position = "none",
+        axis.text.y = element_text(size = 10, color = "black"),
+        axis.text.x = element_blank(),
+        axis.title.x = element_text(size = 10, color = "black"))
+
+# Statement 12
+pre_post_12_selected <- pre_post %>% 
+  filter(question_id == 'prepost12') %>% 
+  mutate(change = post_answer - pre_answer) %>% 
+  group_by(question_id, question) %>% 
+  summarize(mean_change = mean(change),
+            se_change = plotrix::std.error(change)) %>% 
+  mutate(y = 1.2,
+         y2 = 1, 
+         post_mean = 2.56, 
+         stats = ". / NS",
+         question = "If you were to list all the students/staff \nin your department from the worst to the best in \nscience communication, where would you place yourself?") %>% 
+  ggplot() +
+  geom_point(aes(x = mean_change, y = question), color = "#7570b3") +
+  geom_errorbar(aes(xmax = mean_change + 1.96 * se_change, 
+                    xmin = mean_change - 1.96 * se_change, 
+                    y = question), width = 0.25, color = "#7570b3") +
+  geom_vline(xintercept = 0, linetype = "dashed", color = "black") +
+  geom_text(aes(x = y2, y = question, label = stats), 
+            size = 4, color = "#7570b3") +
+  geom_text(aes(x = y, y = question, label = post_mean), 
+            size = 3, color = "#7570b3") +
+  scale_x_continuous(limits = c(-0.7, 1.3), breaks = c(seq(-0.5, 1, 0.5))) +
+  ylab("") +
+  xlab("Change toward 'one of the best' ----------- Change toward 'one of the worst'") +
+  theme_classic() +
+  theme(legend.position = "none",
+        axis.text.y = element_text(size = 10, color = "black"),
+        axis.text.x = element_blank(),
+        axis.title.x = element_text(size = 10, color = "black"))
+
+# Statement 13
+pre_post_13_selected <- pre_post %>% 
+  filter(question_id == 'prepost13') %>% 
+  mutate(change = post_answer - pre_answer) %>% 
+  group_by(question_id, question) %>% 
+  summarize(mean_change = mean(change),
+            se_change = plotrix::std.error(change)) %>% 
+  mutate(y = 1.2,
+         y2 = 1, 
+         post_mean = 2.26, 
+         stats = "** / .",
+         question = "Think about the classes and professional development \ntraining you have had in the past. How good of a job \ndid they prepare you to engage in science communication?") %>% 
+  ggplot() +
+  geom_point(aes(x = mean_change, y = question), color = "#d95f02") +
+  geom_errorbar(aes(xmax = mean_change + 1.96 * se_change, 
+                    xmin = mean_change - 1.96 * se_change, 
+                    y = question), width = 0.25, color = "#d95f02") +
+  geom_vline(xintercept = 0, linetype = "dashed", color = "black") +
+  geom_text(aes(x = y2, y = question, label = stats), 
+            size = 4, color = "#d95f02") +
+  geom_text(aes(x = y, y = question, label = post_mean), 
+            size = 3, color = "#d95f02") +
+  scale_x_continuous(limits = c(-0.7, 1.3), breaks = c(seq(-0.5, 1, 0.5))) +
+  ylab("") +
+  xlab("Change toward more prepared --------------- Change toward less prepared") +
+  theme_classic() +
+  theme(legend.position = "none",
+        axis.text.y = element_text(size = 10, color = "black"),
+        axis.text.x = element_text(size = 10, color = "black"),
+        axis.title.x = element_text(size = 10, color = "black"))
+
+pre_post_agree <- pre_post %>% 
+  filter(answer_type == "Level of Agreement") %>% 
+  mutate(change = post_answer - pre_answer) %>% 
+  group_by(question_id, question) %>% 
+  summarize(mean_change = mean(change),
+            se_change = plotrix::std.error(change)) %>% 
+  mutate(question_id = factor(question_id),
+         question_id = fct_relevel(question_id, 
+                                   "prepost7_1", "prepost7_2", "prepost7_3",  
+                                   "prepost7_4", "prepost7_5", "prepost7_6", 
+                                   "prepost8_1", "prepost8_2", "prepost8_3",  
+                                   "prepost8_4", "prepost8_5", "prepost14_1", 
+                                   "prepost14_2", "prepost14_3", "prepost14_4"),
+         question = factor(question),
+         question = fct_relevel(question,
+              "Engaging in science communication will improve my job performace.",
+            "I will not be successful in learning new concepts related to science communication.",
+            "The public will be more accepting of science after I engage in science communication.", 
+            "I will be successful at engaging in science communication in the next year.",
+            "I would waste too much time if I engaged in science communication.",
+            "Engaging in science communication will take funds away from other activities.",
+            "Engaging in science communication will cause me to lose credibility with my peers.", 
+            "Science communication will provide me opportunities for interdisciplinary collaboration.", 
+            "Engaging in science communication will take time away from my  job responsibilities. ", 
+            "I do not need to prove myself by participating in science communication.",
+            "I value the prestige associated with being a top science communicator.",
+            "Engaging in science communication is not necessary to show I am competent.", 
+            "I believe engaging in science communication is necessary for me to feel successful.", 
+            "Successfully communicating my research to the public makes me feel good about myself.", 
+            "Engaging in science communication improves my self worth."
+                                ),
+         y = 1.2,
+         y2 = 1)
+pre_post_agree$stats <- c(". / NS", ". / NS", "* / NS", "", "", 
+                          "", ". / NS", "", "", "", 
+                          "", "* / NS", "", "", "")
+pre_post_agree$post_mean <- c(4.30, 3.97, 2.04, 4.31, 4.13, 
+                              4.32, 3.76, 3.17, 3.79, 3.21, 
+                              2.29, 4.33, 1.65, 2.03, 1.80)
+# Rest of the statements
+pre_post_agree_graph <- pre_post_agree %>% 
+  ggplot() +
+  geom_point(aes(x = mean_change, y = question, color = question)) +
+  geom_errorbar(aes(xmax = mean_change + 1.96 * se_change, 
+                    xmin = mean_change - 1.96 * se_change, 
+                    y = question, color = question), width = 0.25) +
+  geom_vline(xintercept = 0, linetype = "dashed") +
+  geom_hline(yintercept = 4.5, color = "grey") +
+  geom_hline(yintercept = 9.5, color = "grey") +
+  geom_text(aes(x = y2, y = question, label = stats, 
+                color = question), size = 4) +
+  geom_text(aes(x = y, y = question, label = post_mean, 
+                color = question), size = 3) +
+  scale_x_continuous(limits = c(-0.7, 1.3), breaks = c(seq(-0.5, 1, 0.5))) +
+  scale_color_manual(values = c("black","#7570b3", "#7570b3", "#7570b3", "black",
+                                "black", "black", "#7570b3",  "black", "black", 
+                                "black", "black", "#7570b3", "black", "black")) +
+  ylab("") +
+  xlab("Change toward disagreement ------------- Change toward agreement") +
+  theme_classic() +
+  theme(legend.position = "none",
+        axis.text.y = element_text(size = 10, color = "black"),
+        axis.text.x = element_text(size = 10, color = "black"),
+        axis.title.x = element_text(size = 10, color = "black"))
+
+plot_grid(pre_post_10_selected, pre_post_11_selected, 
+          pre_post_12_selected, pre_post_13_selected,
+          pre_post_agree_graph, ncol=1, align="v", 
+          rel_heights = c(1, 1, 1, 1, 8))
+```
+
+---
+
+# Attitudes Toward Spiders {.tabset}
+
+## Curiosity Level of Agreement
+
+The post-training survey included statements of curiosity toward spiders where participants were asked to provide their level of agreement to each statement. 
+
+The second graph includes the same data as the first graph but generalized to disagree/neutral/agree.
+
+*The numbers to the right indicate the number of survey responses per statement.*
+
+```sql
+SELECT posttest.recipient_id, posttest.question_id, question, answer_type, definition_1, definition_2, definition_3, definition_4, definition_5, answer
+FROM training.posttest
+JOIN training.questions
+ON posttest.question_id = questions.question_id
+WHERE posttest.question_id LIKE 'post26%';
+```
+
+**Students left the training interested in learning more about spiders.**
+
+```{r spider attitudes, echo = TRUE, collapse = TRUE, message = FALSE, warning = FALSE, fig.align="center", fig.width = 11, fig.height = 5}
+spider_attitudes_counts <- spider_attitudes %>% 
+  filter(answer != "NULL") %>% 
+  mutate(answer = ifelse(answer == 1, "Strongly \ndisagree",
+                  ifelse(answer == 2, "Somewhat \ndisagree",
+                  ifelse(answer == 3, "Neither agree \nnor disagree", 
+                  ifelse(answer == 4, "Somewhat \nagree", 
+                  ifelse(answer == 5, "Strongly \nagree", "NA"))))),
+         answer = fct_relevel(answer, "Strongly \nagree", "Somewhat \nagree", 
+                              "Neither agree \nnor disagree", 
+                              "Somewhat \ndisagree", "Strongly \ndisagree")) %>%
+  group_by(question, question_id, answer) %>% 
+  count() %>% 
+  mutate(response = n) %>% 
+  dplyr::select(question_id, question, answer, response)
+
+sum_spider_attitudes <- spider_attitudes_counts %>% 
+  group_by(question) %>% 
+  summarize(total = sum(response)) %>% 
+  mutate(y = 1.1)
+  
+ggplot() +
+    geom_bar(aes(x = response, y = question, fill = answer), position = "fill", stat = "identity", data = spider_attitudes_counts) +
+    geom_text(aes(x = y, y = question, label = total), data = sum_spider_attitudes) +
+    scale_x_continuous(labels = scales::percent) +
+    scale_fill_manual("Level of Aggreement", 
+                 values = five_colors) +
+  xlab("") +
+  ylab("") +
+  theme_classic() +
+  theme(legend.position = "top",
+        axis.text.x = element_text(size = 12, color = "black"),
+        axis.title.y = element_text(size = 12, color = "black"),
+        axis.text.y = element_text(size = 10, color = "black"),
+        legend.text = element_text(size = 10, color = "black"),
+        legend.title = element_text(size = 10, color = "black")) +
+  guides(fill = guide_legend(reverse=TRUE))
+```
+
+```{r spider attitudes simpler, echo = TRUE, collapse = TRUE, message = FALSE, warning = FALSE, fig.align="center", fig.width = 11, fig.height = 5}
+spider_attitudes_simpler <- spider_attitudes_counts %>% 
+  mutate(answer = ifelse(answer == "Strongly \nagree" |
+                           answer == "Somewhat \nagree", "Agree",
+                  ifelse(answer == "Strongly \ndisagree" |
+                           answer == "Somewhat \ndisgree", "Disagree",
+                         "Neutral")), 
+         answer = fct_relevel(answer, "Agree", "Neutral", "Disagree")) %>% 
+  group_by(question_id, question, answer) %>% 
+  summarize(response = sum(response))
+
+ggplot() +
+    geom_bar(aes(x = response, y = question, fill = answer), position = "fill", stat = "identity", data = spider_attitudes_simpler) +
+    geom_text(aes(x = y, y = question, label = total), data = sum_spider_attitudes) +
+    scale_x_continuous(labels = scales::percent) +
+    scale_fill_manual("Level of Aggreement", 
+                 values = three_colors) +
+  xlab("") +
+  ylab("") +
+  theme_classic() +
+  theme(legend.position = "top",
+        axis.text.x = element_text(size = 12, color = "black"),
+        axis.title.y = element_text(size = 12, color = "black"),
+        axis.text.y = element_text(size = 10, color = "black"),
+        legend.text = element_text(size = 10, color = "black"),
+        legend.title = element_text(size = 10, color = "black")) +
+  guides(fill = guide_legend(reverse=TRUE))
+```
+
+---
+
+## Reactions True/False
+
+The post-training survey also included statements of reactions to spiders where participants were asked to answer true or false. 
+
+*The numbers to the right indicate the number of survey responses per statement.*
+
+```sql
+SELECT posttest.recipient_id, posttest.question_id, question, answer_type, definition_1, definition_2, answer
+FROM training.posttest
+JOIN training.questions
+ON posttest.question_id = questions.question_id
+WHERE posttest.question_id LIKE 'post25%';
+```
+
+```{r spider attitudes yn, echo = TRUE, collapse = TRUE, message = FALSE, warning = FALSE, fig.align="center", fig.width = 11, fig.height = 8}
+spider_attitudes_yn_counts <- spider_attitudes_yn %>% 
+  filter(answer != "NULL") %>% 
+  mutate(answer = ifelse(answer == 0, "False", "True"),
+         answer = fct_relevel(answer, "True", "False")) %>%
+  group_by(question, question_id, answer) %>% 
+  count() %>% 
+  ungroup() %>% 
+  mutate(response = n,
+         question = fct_relevel(question, 
+            "I would prefer not to finish a story if something about spiders was introduced into the plot.", 
+            "I avoid going to parks or on camping trips because there may be spiders about.",  
+            "I feel sick when I see a spider.", 
+            "I would feel some anxiety holding a toy spider in my hand.",  
+            "I would not go down to the basement to get something if I thought there might be spiders down there.",  
+            "Even if I was late for a very important appointment, the thought of spiders would stop me from taking a shortcut through an underpass. ", 
+            "I dislike looking at pictures of spiders in a magazine. ",  
+            "The way spiders move is repulsive.", 
+            "If I came upon a spider while cleaning the attic I would probably run.", 
+            "I shudder when I think of spiders.", 
+            "I am terrified by the thought of touching a harmless spider.",  
+            " If there is a spider on the ceiling over my bed, I cannot go to sleep unless someone kills it for me.",  
+            "When I see a spider, I feel tense and restless.",  
+            "If someone says that there are spiders anywhere about, I become alert and edgy.",  
+            "I would feel uncomfortable if a spider crawled out of my shoe as I took it out of the closet to put it on." 
+            )) %>% 
+  dplyr::select(question_id, question, answer, response) %>% 
+  arrange(answer, response) 
+
+sum_spider_attitudes_yn <- spider_attitudes_yn_counts %>% 
+  group_by(question) %>% 
+  summarize(total = sum(response)) %>% 
+  mutate(y = 1.1)
+  
+ggplot() +
+    geom_bar(aes(x = sort(response), y = question, fill = answer), position = "fill", stat = "identity", data = spider_attitudes_yn_counts) +
+    geom_text(aes(x = y, y = question, label = total), data = sum_spider_attitudes_yn) +
+    scale_x_continuous(labels = scales::percent) +
+    scale_fill_manual("", 
+                 values = c("#1b9e77", "#e6ab02")) +
+  xlab("") +
+  ylab("") +
+  theme_classic() +
+  theme(legend.position = "top",
+        axis.text.x = element_text(size = 12, color = "black"),
+        axis.title.y = element_text(size = 12, color = "black"),
+        axis.text.y = element_text(size = 10, color = "black"),
+        legend.text = element_text(size = 10, color = "black"),
+        legend.title = element_text(size = 10, color = "black")) +
+  guides(fill = guide_legend(reverse=TRUE))
+```
+
+---
+
+## Modules Only vs. ELE + Modules
+
+I compared the responses of ELE participants to those that only completed the modules. I calculated a composite score for each participant by averaging their responses related to:
+
+- their level of agreement (1 = strongly disagree, 5 = strongly agree) with wanting to learn more curiosity toward spiders (n = 70)
+
+- their reactions to spiders from true (1)/false(0) statements (n = 73)
+
+I removed participants that did not respond to all of the statements.
+
+*Point and errorbar are the mean and standard error. The jittered points represent each individual response.*
+
+```sql
+FROM training.posttest
+JOIN training.participants
+ON participants.recipient_id = posttest.recipient_id
+JOIN training.questions
+ON questions.question_id = posttest.question_id
+WHERE questions.question_id = 'participation5';
+```
+
+**ELE participants exhibited significantly higher levels of curiosity for spiders than those who only completed the modules (P = 0.031). However, this effect diminishes if we remove participants with previous experience with arachnids (P = 0.083).**
+
+**Participating in ELE did not impact reactions to spiders.**
+
+```{r spider attitudes composite, echo = TRUE, collapse = TRUE, message = FALSE, warning = FALSE}
+spider_attitudes_composite <- spider_attitudes %>%   
+  #filter(course == 0, 
+  #       research == 0) %>% 
+  select(recipient_id, question_id, answer, iteration, course, 
+         research, ele, political_views, political_party) %>% 
+  pivot_wider(values_from = answer, names_from = question_id) %>% 
+  filter(if_all(starts_with("post26_"), ~ . != "NULL")) %>%
+  mutate(across(starts_with("post26_"), as.numeric)) %>%
+  group_by(recipient_id) %>% 
+  mutate(composite = mean(c_across(post26_1:post26_7))) %>% 
+  ungroup() %>% 
+  mutate(ele = factor(as.character(ele)),
+         ele = fct_recode(ele, "ELE + Modules" = "1", "Modules Only" = "0"))
+
+spider_attitudes_yn_composite <- spider_attitudes_yn %>%   
+    #filter(course == 0, 
+    #     research == 0) %>% 
+  select(recipient_id, question_id, answer, iteration, course, 
+         research, ele, political_views, political_party) %>% 
+  pivot_wider(values_from = answer, names_from = question_id) %>% 
+  filter(if_all(starts_with("post25_"), ~ . != "NULL")) %>%
+  mutate(across(starts_with("post25_"), as.numeric)) %>%
+  group_by(recipient_id) %>% 
+  mutate(composite = mean(c_across(post25_1:post25_15))) %>% 
+  ungroup() %>% 
+  mutate(ele = factor(as.character(ele)),
+         ele = fct_recode(ele, "ELE + Modules" = "1", "Modules Only" = "0"))
+```
+
+```{r spider attitudes composite stats, include = FALSE}
+t.test(composite ~ ele, data = spider_attitudes_composite)
+# * if all, . if remove previous arachnid experience
+
+t.test(composite ~ ele, data = spider_attitudes_yn_composite)
+#both NS
+```
+
+```{r spider attitudes composite graph, echo = TRUE, collapse = TRUE, message = FALSE, warning = FALSE, fig.align="center", fig.width = 11, fig.height = 5}
+composite_sum <- spider_attitudes_composite %>% 
+  group_by(ele) %>% 
+  summarize(mean = mean(composite),
+            se = plotrix::std.error(composite)) 
+
+composite_graph <- ggplot() +
+  geom_jitter(aes(x = ele, y = composite), width = 0.1, alpha = 0.5, 
+              color = "#d95f02", data = spider_attitudes_composite) +
+  geom_point(aes(x = ele, y = mean), size = 3, color = "#d95f02", data = composite_sum) +
+  geom_errorbar(aes(x = ele, ymax = mean + se, ymin = mean - se), 
+                linewidth = 1, color = "#d95f02", width = 0.25, data = composite_sum) +
+  xlab("") +
+  ylab("Average Level of Agreement \nLess Curious ----------------More Curious") +
+  theme_classic() +
+  theme(legend.position = "none",
+        axis.text.x = element_text(size = 14, color = "black"),
+        axis.title.y = element_text(size = 14, color = "black"),
+        axis.text.y = element_text(size = 14, color = "black"))
+
+composite_yn_sum <- spider_attitudes_yn_composite %>% 
+  group_by(ele) %>% 
+  summarize(mean = mean(composite),
+            se = plotrix::std.error(composite)) 
+
+composite_yn_graph <- ggplot() +
+  geom_jitter(aes(x = ele, y = composite), width = 0.1, alpha = 0.5, 
+              color = "black", data = spider_attitudes_yn_composite) +
+  geom_point(aes(x = ele, y = mean), size = 3, color = "black", data = composite_yn_sum) +
+  geom_errorbar(aes(x = ele, ymax = mean + se, ymin = mean - se), 
+                linewidth = 1, color = "black", width = 0.25, data = composite_yn_sum) +
+  xlab("") +
+  ylab("Average True/False \nLess Anxious ----------------More Anxious") +
+  theme_classic() +
+  theme(legend.position = "none",
+        axis.text.x = element_text(size = 14, color = "black"),
+        axis.title.y = element_text(size = 14, color = "black"),
+        axis.text.y = element_text(size = 14, color = "black"))
+
+plot_grid(composite_graph, composite_yn_graph, ncol=2)
+```
+
+---
+
+## Preliminary Politics
+
+In the post-training survey, participants entered their political views and party. I graphed the composite score for:
+
+- the average response to spider curiosity statements (top)
+- the average response to spider reaction statements (bottom)
+
+for recipients describing their political views (left graph) and party (right graph). I have not run any statistical analyses yet.
+
+*Points and errorbars are the mean and standard error. The jittered points represent each individual response.*
+
+*The numbers at the top are the number of responses associated with each view/party.*
+
+```sql
+SELECT recipient_id, questions.question_id, question, definition_1, definition_2, definition_3, definition_4, definition_5, definition_6, definition_7, answer 
+FROM training.posttest
+JOIN training.questions 
+ON posttest.question_id = questions.question_id
+WHERE questions.question_id = 'post45' OR questions.question_id = 'post46';
+```
+
+**Generally, self-described liberals and democrats may be more curious about spiders than conservatives and republicans, although conservatives/republicans are underrepresented in the data. Political views/party do not appear to be related to spider reactions.**
+
+```{r spider politics, echo = TRUE, collapse = TRUE, message = FALSE, warning = FALSE, fig.align="center", fig.width = 11, fig.height = 6}
+spider_attitudes_composite  <- spider_attitudes_composite %>% 
+  filter(political_views != "NULL",
+         political_party != "NULL",
+        !is.na(composite))
+
+dem_views_count <- spider_attitudes_composite %>% 
+  group_by(political_views) %>% 
+  count()
+
+dem_views_sum <- spider_attitudes_composite %>% 
+  group_by(political_views) %>% 
+  summarize(mean = mean(composite),
+            se = plotrix::std.error(composite))
+
+dem_views_graph <- ggplot() +
+  geom_jitter(aes(x = political_views, y = composite), 
+              color = "black", width = 0.1, alpha = 0.5, 
+              data = spider_attitudes_composite) +
+  geom_point(aes(x = political_views, y = mean), color = "black", size = 3, data = dem_views_sum) +
+  geom_errorbar(aes(x = political_views, ymax = mean + se, 
+                    ymin = mean - se), color = "black", 
+                linewidth = 1, width = 0.25, data = dem_views_sum) +
+  geom_text(aes(x = political_views, y = 5.3, label = n), data = dem_views_count) +
+  xlab("") +
+  ylab("Average Level of Agreement \nLess Curious ----------------More Curious") +
+  theme_classic() +
+  theme(legend.position = "none",
+        axis.text.x = element_text(size = 12, color = "black", 
+                                   angle = 45, vjust = 1, hjust = 1),
+        axis.title.y = element_text(size = 12, color = "black"),
+        axis.text.y = element_text(size = 12, color = "black")) 
+
+dem_party_count <- spider_attitudes_composite %>% 
+  group_by(political_party) %>% 
+  count()
+
+dem_party_sum <- spider_attitudes_composite %>% 
+  group_by(political_party) %>% 
+  summarize(mean = mean(composite),
+            se = plotrix::std.error(composite))
+
+dem_party_graph <- ggplot() +
+  geom_jitter(aes(x = political_party, y = composite), 
+              color = "black", width = 0.1, alpha = 0.5, 
+              data = spider_attitudes_composite) +
+  geom_point(aes(x = political_party, y = mean), color = "black", size = 3, data = dem_party_sum) +
+  geom_errorbar(aes(x = political_party, ymax = mean + se, 
+                    ymin = mean - se), color = "black", 
+                linewidth = 1, width = 0.25, data = dem_party_sum) +
+  geom_text(aes(x = political_party, y = 5.3, label = n), data = dem_party_count) +
+  xlab("") +
+  ylab("Average Level of Agreement \nLess Curious ----------------More Curious") +
+  theme_classic() +
+  theme(legend.position = "none",
+        axis.text.x = element_text(size = 12, color = "black", 
+                                   angle = 45, vjust = 1, hjust = 1),
+        axis.title.y = element_text(size = 12, color = "black"),
+        axis.text.y = element_text(size = 12, color = "black")) 
+
+plot_grid(dem_views_graph, dem_party_graph, ncol=2)
+```
+
+```{r spider yn politics, echo = TRUE, collapse = TRUE, message = FALSE, warning = FALSE, fig.align="center", fig.width = 11, fig.height = 6}
+spider_attitudes_yn_composite  <- spider_attitudes_yn_composite %>% 
+  filter(political_views != "NULL",
+         political_party != "NULL",
+        !is.na(composite))
+
+dem_views_count_yn <- spider_attitudes_yn_composite %>% 
+  group_by(political_views) %>% 
+  count()
+
+dem_views_sum_yn <- spider_attitudes_yn_composite %>% 
+  group_by(political_views) %>% 
+  summarize(mean = mean(composite),
+            se = plotrix::std.error(composite))
+
+dem_views_yn_graph <- ggplot() +
+  geom_jitter(aes(x = political_views, y = composite), 
+              color = "black", width = 0.1, alpha = 0.5, 
+              data = spider_attitudes_yn_composite) +
+  geom_point(aes(x = political_views, y = mean), 
+             color = "black", size = 3, data = dem_views_sum_yn) +
+  geom_errorbar(aes(x = political_views, ymax = mean + se, 
+                    ymin = mean - se), color = "black", 
+                linewidth = 1, width = 0.25, data = dem_views_sum_yn) +
+  geom_text(aes(x = political_views, y = 1, label = n), data = dem_views_count_yn) +
+  xlab("") +
+  ylab("Average True/False \nLess Anxious ----------------More Anxious") +
+  theme_classic() +
+  theme(legend.position = "none",
+        axis.text.x = element_text(size = 12, color = "black", 
+                                   angle = 45, vjust = 1, hjust = 1),
+        axis.title.y = element_text(size = 12, color = "black"),
+        axis.text.y = element_text(size = 12, color = "black")) 
+
+dem_party_count_yn <- spider_attitudes_yn_composite %>% 
+  group_by(political_party) %>% 
+  count()
+
+dem_party_sum_yn <- spider_attitudes_yn_composite %>% 
+  group_by(political_party) %>% 
+  summarize(mean = mean(composite),
+            se = plotrix::std.error(composite))
+
+dem_party_yn_graph <- ggplot() +
+  geom_jitter(aes(x = political_party, y = composite), 
+              color = "black", width = 0.1, alpha = 0.5, 
+              data = spider_attitudes_yn_composite) +
+  geom_point(aes(x = political_party, y = mean), 
+             color = "black", size = 3, data = dem_party_sum_yn) +
+  geom_errorbar(aes(x = political_party, ymax = mean + se, 
+                    ymin = mean - se), color = "black", 
+                linewidth = 1, width = 0.25, data = dem_party_sum_yn) +
+  geom_text(aes(x = political_party, y = 1, label = n), data = dem_party_count_yn) +
+  xlab("") +
+  ylab("Average True/False \nLess Anxious ----------------More Anxious") +
+  theme_classic() +
+  theme(legend.position = "none",
+        axis.text.x = element_text(size = 12, color = "black", 
+                                   angle = 45, vjust = 1, hjust = 1),
+        axis.title.y = element_text(size = 12, color = "black"),
+        axis.text.y = element_text(size = 12, color = "black")) 
+
+plot_grid(dem_views_yn_graph, dem_party_yn_graph, ncol=2)
+```
+
+---
+
+# Change in Spider Attitudes {.tabset}
+
+Participants were asked to choose their level of agreement that participating in the workshops and activities has changed their attitudes toward spiders. 
+
+```sql
+SELECT posttest.recipient_id, posttest.question_id, question, answer_type, definition_1, definition_2, definition_3, definition_4, definition_5, definition_6, definition_7, answer
+FROM training.posttest
+JOIN training.questions
+ON posttest.question_id = questions.question_id
+WHERE posttest.question_id LIKE 'post27%';
+```
+
+## Combined
+
+The second graph generalizes to disagree/neutral/agree.
+
+*The numbers to the right indicate the number of survey responses per statement.*
+
+**70% of participants had self-reported changed attitudes toward spiders following the training.**
+
+```{r change spider attitudes, echo = TRUE, collapse = TRUE, message = FALSE, warning = FALSE, fig.align="center", fig.width = 11, fig.height = 4}
+change_spider_attitudes_counts <- change_spider_attitudes %>% 
+  filter(answer != "NULL") %>% 
+  mutate(answer = ifelse(answer == 1, "Strongly \ndisagree",
+                  ifelse(answer == 2, "Disagree", 
+                  ifelse(answer == 3, "Somewhat \ndisagree",
+                  ifelse(answer == 4, "Neither agree \nnor disagree", 
+                  ifelse(answer == 5, "Somewhat \nagree", 
+                  ifelse(answer == 6, "Agree",
+                  ifelse(answer == 7, "Strongly \nagree", "NA"))))))),
+         answer = fct_relevel(answer, "Strongly \nagree", "Agree", 
+                              "Somewhat \nagree", "Neither agree \nnor disagree", 
+                              "Somewhat \ndisagree", "Disagree")) %>%
+  group_by(question, question_id, answer) %>% 
+  count() %>% 
+  mutate(response = n) %>% 
+  dplyr::select(question_id, question, answer, response)
+
+sum_change_spider_attitudes <- change_spider_attitudes_counts %>% 
+  group_by(question) %>% 
+  summarize(total = sum(response)) %>% 
+  mutate(y = 1.1)
+  
+ggplot() +
+    geom_bar(aes(x = response, y = factor(question), fill = answer), 
+             position = "fill", stat = "identity", 
+             data = change_spider_attitudes_counts) +
+    geom_text(aes(x = y, y = factor(question), label = total), 
+              data = sum_change_spider_attitudes) +
+  annotate(geom = 'segment', y = 1.5,  x = 0.30, xend = 1, yend = 1.5) +
+  annotate(geom = 'text', y = 1.53,  x = 0.65, label = "70% Agree") +
+    scale_y_discrete() +
+    scale_x_continuous(labels = scales::percent) +
+    scale_fill_manual("Level of Aggreement", 
+                 values = six_colors) +
+  xlab("") +
+  ylab("") +
+  theme_classic() +
+  theme(legend.position = "top",
+        axis.text.x = element_text(size = 12, color = "black"),
+        axis.title.y = element_text(size = 12, color = "black"),
+        axis.text.y = element_text(size = 10, color = "black"),
+        legend.text = element_text(size = 10, color = "black"),
+        legend.title = element_text(size = 10, color = "black")) +
+  guides(fill = guide_legend(reverse=TRUE))
+```
+
+```{r change spider attitudes simpler, echo = TRUE, collapse = TRUE, message = FALSE, warning = FALSE, fig.align="center", fig.width = 11, fig.height = 4}
+change_spider_attitudes_simpler <- change_spider_attitudes_counts %>% 
+  mutate(answer = ifelse(answer == "Strongly \nagree" |
+                           answer == "Agree" |
+                           answer == "Somewhat \nagree", "Agree",
+                  ifelse(answer == "Strongly \ndisagree" |
+                           answer == "Disagree" |
+                           answer == "Somewhat \ndisgree", "Disagree",
+                         "Neutral")), 
+         answer = fct_relevel(answer, "Agree", "Neutral", "Disagree")) %>% 
+  group_by(question_id, question, answer) %>% 
+  summarize(response = sum(response))
+  
+ggplot() +
+    geom_bar(aes(x = response, y = factor(question), fill = answer), 
+             position = "fill", stat = "identity", 
+             data = change_spider_attitudes_simpler) +
+    geom_text(aes(x = y, y = factor(question), label = total), 
+              data = sum_change_spider_attitudes) +
+  annotate(geom = 'segment', y = 1.5,  x = 0.30, xend = 1, yend = 1.5) +
+  annotate(geom = 'text', y = 1.53,  x = 0.65, label = "70% Agree") +
+    scale_y_discrete() +
+    scale_x_continuous(labels = scales::percent) +
+    scale_fill_manual("Level of Aggreement", 
+                 values = three_colors) +
+  xlab("") +
+  ylab("") +
+  theme_classic() +
+  theme(legend.position = "top",
+        axis.text.x = element_text(size = 12, color = "black"),
+        axis.title.y = element_text(size = 12, color = "black"),
+        axis.text.y = element_text(size = 10, color = "black"),
+        legend.text = element_text(size = 10, color = "black"),
+        legend.title = element_text(size = 10, color = "black")) +
+  guides(fill = guide_legend(reverse=TRUE))
+```
+
+---
+
+## Modules Only vs. ELE + Modules
+
+I compared responses to this statement between ELE participants and those who only completed the modules.
+
+*Points and errorbars are the mean and standard error. The jittered points represent each individual response.*
+
+**ELE participants felt more strongly that their attitudes toward spiders changed than those that did not participate in ELE. This is true whether or not participants with previous arachnid experience (e.g., courses,research) were included.**
+
+```{r change spider attitudes arachnid ele, echo = TRUE, collapse = TRUE, message = FALSE, warning = FALSE, fig.align="center", fig.width = 4, fig.height = 4}
+# stats
+csa <- change_spider_attitudes %>% 
+  #filter(research == 0,
+  #       course == 0) %>% 
+  filter(answer != "NULL") %>% 
+  mutate(answer = as.numeric(answer),
+         ele = ifelse(ele == 1, "ELE + Modules", "Modules Only"),
+         ele = fct_relevel(ele, "Modules Only", "ELE + Modules"),
+         question = fct_recode(question,
+           "Participating in these workshops and activities \nhas changed my attitudes toward spiders." = 
+             "Participating in these workshops and activities has changed my attitudes toward spiders."))
+t.test(answer ~ ele, data = csa)
+
+# wrangle for graph
+change_spider_attitudes_ele <- csa %>% 
+  group_by(ele, question_id, question) %>% 
+  summarize(mean = mean(answer),
+            se = plotrix::std.error(answer))
+
+# graph
+ggplot() +
+  geom_jitter(aes(x = ele, y = answer), color = "#d95f02", 
+              width = 0.1, alpha = 0.5, data = csa) +
+  geom_point(aes(x = ele, y = mean), size = 3, data = change_spider_attitudes_ele, 
+             color = "#d95f02") +
+  geom_errorbar(aes(x = ele, ymax = mean + se, ymin = mean - se), 
+                color = "#d95f02", linewidth = 1, width = 0.25,
+                data = change_spider_attitudes_ele) +
+  xlab("") +
+  ylab("Level of Agreement \nUnchanged Attitude -------------------- Changed Attitude") +
+  theme_classic() +
+  theme(legend.position = "top",
+        axis.text.x = element_text(size = 12, color = "black"),
+        axis.title.y = element_text(size = 12, color = "black"),
+        axis.text.y = element_text(size = 12, color = "black"),
+        legend.text = element_text(size = 10, color = "black"),
+        legend.title = element_text(size = 10, color = "black"),
+        strip.text = element_text(size = 10)) +
+  facet_wrap(~question)
+```
+
+---
+
+## Preliminary Politics
+
+In the post-training survey, participants entered their political views and party. I graphed self-reported changes in attitudes toward spiders for recipients describing their political views (left graph) and party (right graph). I have not run any statistical analyses yet.
+
+*The numbers at the top are the number of responses associated with each view/party.*
+
+*Points and errorbars are the mean and standard error. The jittered points represent each individual response.*
+
+**Changing attitudes toward spiders does not appear to be affected by self-described political views/party.**
+
+```{r change politics, echo = TRUE, collapse = TRUE, message = FALSE, warning = FALSE, fig.align="center", fig.width = 11, fig.height = 6}
+csa <- csa %>% 
+  filter(political_views != "NULL",
+         political_party != "NULL",
+        !is.na(answer))
+
+dem_views_count <- csa %>% 
+  group_by(political_views) %>% 
+  count()
+
+dem_views_sum <- csa %>% 
+  group_by(political_views) %>% 
+  summarize(mean = mean(answer),
+            se = plotrix::std.error(answer))
+
+dem_views_graph <- ggplot() +
+  geom_jitter(aes(x = political_views, y = answer), 
+              color = "black", width = 0.1, alpha = 0.5, data = csa) +
+  geom_point(aes(x = political_views, y = mean), 
+             color = "black", size = 3, data = dem_views_sum) +
+  geom_errorbar(aes(x = political_views, ymax = mean + se, 
+                    ymin = mean - se), 
+                color = "black", linewidth = 1, width = 0.25, data = dem_views_sum) +
+  geom_text(aes(x = political_views, y = 7.6, label = n), data = dem_views_count) +
+  xlab("") +
+  ylab("Level of Agreement \nUnchanged Attitude -------------------- Changed Attitude") +
+  theme_classic() +
+  theme(legend.position = "none",
+        axis.text.x = element_text(size = 12, color = "black", 
+                                   angle = 45, vjust = 1, hjust = 1),
+        axis.title.y = element_text(size = 12, color = "black"),
+        axis.text.y = element_text(size = 12, color = "black")) 
+
+dem_party_count <- csa %>% 
+  group_by(political_party) %>% 
+  count()
+
+dem_party_sum <- csa %>% 
+  group_by(political_party) %>% 
+  summarize(mean = mean(answer),
+            se = plotrix::std.error(answer))
+
+dem_party_graph <- ggplot() +
+  geom_jitter(aes(x = political_party, y = answer), 
+              color = "black", width = 0.1, alpha = 0.5, data = csa) +
+  geom_point(aes(x = political_party, y = mean), 
+             color = "black", size = 3, data = dem_party_sum) +
+  geom_errorbar(aes(x = political_party, ymax = mean + se, ymin = mean - se), 
+                color = "black", linewidth = 1, width = 0.25, data = dem_party_sum) +
+  geom_text(aes(x = political_party, y = 7.6, label = n), data = dem_party_count) +
+  xlab("") +
+  ylab("Level of Agreement \nUnchanged Attitude -------------------- Changed Attitude") +
+  theme_classic() +
+  theme(legend.position = "none",
+        axis.text.x = element_text(size = 12, color = "black", 
+                                   angle = 45, vjust = 1, hjust = 1),
+        axis.title.y = element_text(size = 12, color = "black"),
+        axis.text.y = element_text(size = 12, color = "black")) 
+
+plot_grid(dem_views_graph, dem_party_graph, ncol=2)
+```
+
+# Attitudes Toward Sci-Comm  {.tabset}
+
+The post-training survey included statements of motivation or confidence in science communication.
+
+```sql
+SELECT recipient_id, questions.question_id, question, answer_type, definition_1, definition_2, definition_3, definition_4, definition_5, answer
+FROM training.posttest
+JOIN training.questions
+ON posttest.question_id = questions.question_id
+WHERE question_type = 'Motivation/Confidence';
+```
+
+## Feelings of Sci-Comm
+
+Here, I looked at the level of agreement for each response about feelings toward science communication.
+
+The second graph generalizes to disagree/neutral/agree.
+
+*The numbers to the right indicate the number of survey responses per statement.*
+
+**Students find science communication enjoyable, exciting, and engaging to learn about and participate in.**
+
+```{r comm agree 7, echo = TRUE, collapse = TRUE, message = FALSE, warning = FALSE, fig.align="center", fig.width = 11, fig.height = 4}
+comm_agree <- confidence %>% 
+  filter(definition_1 == "Strongly disagree",
+         answer != "NULL") %>% 
+  mutate(answer = ifelse(answer == 1, "Strongly \ndisagree",
+                  ifelse(answer == 2, "Somewhat \ndisagree",
+                  ifelse(answer == 3, "Neither agree \nnor disagree", 
+                  ifelse(answer == 4, "Somewhat \nagree", 
+                  ifelse(answer == 5, "Strongly \nagree", "NA"))))),
+         answer = fct_relevel(answer, "Strongly \nagree", "Somewhat \nagree", 
+                              "Neither agree \nnor disagree", 
+                              "Somewhat \ndisagree", "Strongly \ndisagree")) %>%
+  group_by(question, question_id, answer) %>% 
+  count() %>% 
+  mutate(response = n) %>% 
+  dplyr::select(question_id, question, answer, response)
+
+sum_comm_agree <- comm_agree %>% 
+  group_by(question) %>% 
+  summarize(total = sum(response)) %>% 
+  mutate(y = 1.1)
+  
+ggplot() +
+    geom_bar(aes(x = response, y = question, fill = answer), 
+             position = "fill", stat = "identity", data = comm_agree) +
+    geom_text(aes(x = y, y = question, label = total), data = sum_comm_agree) +
+    scale_x_continuous(labels = scales::percent) +
+    scale_fill_manual("", 
+                 values = five_colors) +
+  xlab("") +
+  ylab("") +
+  theme_classic() +
+  theme(legend.position = "top",
+        axis.text.x = element_text(size = 12, color = "black"),
+        axis.title.y = element_text(size = 12, color = "black"),
+        axis.text.y = element_text(size = 10, color = "black"),
+        legend.text = element_text(size = 10, color = "black"),
+        legend.title = element_text(size = 10, color = "black")) +
+  guides(fill = guide_legend(reverse=TRUE))
+```
+
+```{r comm agree simpler, echo = TRUE, collapse = TRUE, message = FALSE, warning = FALSE, fig.align="center", fig.width = 11, fig.height = 4.5}
+comm_agree_simpler <- comm_agree %>% 
+  mutate(answer = ifelse(answer == "Strongly \nagree" |
+                           answer == "Somewhat \nagree", "Agree",
+                  ifelse(answer == "Strongly \ndisagree" |
+                           answer == "Somewhat \ndisagree", "Disagree",
+                         "Neutral")), 
+         answer = fct_relevel(answer, "Agree", "Neutral", "Disagree")) %>% 
+  group_by(question_id, question, answer) %>% 
+  summarize(response = sum(response))
+
+ggplot() +
+    geom_bar(aes(x = response, y = question, fill = answer), 
+             position = "fill", stat = "identity", data = comm_agree_simpler) +
+    geom_text(aes(x = y, y = question, label = total), data = sum_comm_agree) +
+    scale_x_continuous(labels = scales::percent) +
+    scale_fill_manual("Level of Aggreement", 
+                 values = three_colors) +
+  xlab("") +
+  ylab("") +
+  theme_classic() +
+  theme(legend.position = "top",
+        axis.text.x = element_text(size = 12, color = "black"),
+        axis.title.y = element_text(size = 12, color = "black"),
+        axis.text.y = element_text(size = 10, color = "black"),
+        legend.text = element_text(size = 10, color = "black"),
+        legend.title = element_text(size = 10, color = "black")) +
+  guides(fill = guide_legend(reverse=TRUE))
+```
+
+## Modules Only vs. ELE + Modules
+
+I compared the responses of ELE participants to those that only completed the modules. I calculated a composite score for each participant by averaging their responses related to their level of agreement (1 = strongly disagree, 5 = strongly agree) with feelings toward science communication (n = 72).
+
+*Points and errorbars are the mean and standard error. The jittered points represent each individual response.*
+
+**There was no difference in feelings toward science communication based on whether or not the participant participated in ELE.**
+
+```{r sci comm composite, echo = TRUE, collapse = TRUE, message = FALSE, warning = FALSE}
+sci_comm_composite <- confidence %>%   
+  filter(definition_1 == "Strongly disagree",
+         #course == 0, 
+         #research == 0,
+         answer != "NULL") %>% 
+  mutate(answer = ifelse(answer == 1, "Strongly \ndisagree",
+                  ifelse(answer == 2, "Somewhat \ndisagree",
+                  ifelse(answer == 3, "Neither agree \nnor disagree", 
+                  ifelse(answer == 4, "Somewhat \nagree", 
+                  ifelse(answer == 5, "Strongly \nagree", "NA"))))),
+         answer = fct_relevel(answer, "Strongly \nagree", "Somewhat \nagree", 
+                              "Neither agree \nnor disagree", 
+                              "Somewhat \ndisagree", "Strongly \ndisagree")) %>% 
+  select(recipient_id, question_id, answer, iteration, course, research, ele) %>% 
+  pivot_wider(values_from = answer, names_from = question_id) %>% 
+  filter(if_all(starts_with("post6_"), ~ . != "NULL")) %>%
+  mutate(across(starts_with("post6_"), as.numeric)) %>%
+  group_by(recipient_id) %>% 
+  mutate(composite = mean(c_across(post6_1:post6_7))) %>% 
+  ungroup() %>% 
+  mutate(ele = factor(as.character(ele)),
+         ele = fct_recode(ele, "ELE + Modules" = "1", "Modules Only" = "0"))
+```
+
+```{r sci comm composite stats, include = FALSE}
+t.test(composite ~ ele, data = sci_comm_composite)
+# NS either way
+```
+
+```{r sci comm composite graph, echo = TRUE, collapse = TRUE, message = FALSE, warning = FALSE, fig.align="center", fig.width = 4, fig.height = 4}
+composite_sum_sc <- sci_comm_composite %>% 
+  group_by(ele) %>% 
+  summarize(mean = mean(composite),
+            se = plotrix::std.error(composite)) 
+
+ggplot() +
+  geom_jitter(aes(x = ele, y = composite), width = 0.1, 
+              alpha = 0.5, color = "black", data = sci_comm_composite) +
+  geom_point(aes(x = ele, y = mean), size = 3, 
+             color = "black", data = composite_sum_sc) +
+  geom_errorbar(aes(x = ele, ymax = mean + se, ymin = mean - se), linewidth = 1, color = "black", width = 0.25, data = composite_sum_sc) +
+  xlab("") +
+  ylab("Average Level of Agreement \nLess Agreement ------------- More Agreement") +
+  theme_classic() +
+  theme(legend.position = "none",
+        axis.text.x = element_text(size = 14, color = "black"),
+        axis.title.y = element_text(size = 14, color = "black"),
+        axis.text.y = element_text(size = 14, color = "black"))
+```
+
+## Self Reflection
+
+There were several statements in the post-training survey of self-reflection of science and science communication skills.
+
+*The numbers to the right represent the total number of responses represented.*
+
+**Participants generally see themselves as scientists. In particular, science was identified as being widely important to their future career.**
+
+```{r comm reflection, echo = TRUE, collapse = TRUE, message = FALSE, warning = FALSE, fig.align="center", fig.width = 11, fig.height = 10}
+comm_alot <- confidence %>% 
+  filter(definition_1 == "A lot",
+         answer != "NULL") %>% 
+  mutate(answer = ifelse(answer == 1, "A lot",
+                  ifelse(answer == 2, "Some",
+                  ifelse(answer == 3, "A little", 
+                  ifelse(answer == 4, "Not at all", "NA")))),
+         answer = fct_relevel(answer, "A lot", "Some", "A little", "Not at all" )) %>%
+  group_by(question, question_id, answer) %>% 
+  count() %>% 
+  mutate(response = n) %>% 
+  dplyr::select(question_id, question, answer, response)
+
+sum_comm_alot <- comm_alot %>% 
+  group_by(question) %>% 
+  summarize(total = sum(response)) %>% 
+  mutate(y = 1.1)
+  
+comm_alot_graph <- ggplot() +
+    geom_bar(aes(x = response, y = question, fill = answer), 
+             position = "fill", stat = "identity", data = comm_alot) +
+    geom_text(aes(x = y, y = question, label = total), data = sum_comm_alot) +
+    scale_x_continuous(labels = scales::percent) +
+    scale_fill_manual("", 
+                 values = four_colors) +
+  xlab("") +
+  ylab("") +
+  theme_classic() +
+  theme(legend.position = "top",
+        axis.text.x = element_text(size = 12, color = "black"),
+        axis.title.y = element_text(size = 12, color = "black"),
+        axis.text.y = element_text(size = 10, color = "black"),
+        legend.text = element_text(size = 10, color = "black"),
+        legend.title = element_text(size = 10, color = "black")) +
+  guides(fill = guide_legend(reverse=TRUE))
+
+comm_none <- confidence %>% 
+  filter(definition_1 == "None at all",
+         answer != "NULL") %>% 
+  mutate(answer = ifelse(answer == 1, "None at all",
+                  ifelse(answer == 2, "A little",
+                  ifelse(answer == 3, "A moderate amount", 
+                  ifelse(answer == 4, "A lot",
+                  ifelse(answer == 5, "A great deal", "NA"))))),
+         answer = fct_relevel(answer, "A great deal", "A lot", "A moderate amount", 
+                              "A little", "None at all" )) %>%
+  group_by(question, question_id, answer) %>% 
+  count() %>% 
+  mutate(response = n) %>% 
+  dplyr::select(question_id, question, answer, response)
+
+sum_comm_none <- comm_none %>% 
+  group_by(question) %>% 
+  summarize(total = sum(response)) %>% 
+  mutate(y = 1.1)
+  
+comm_none_graph <- ggplot() +
+    geom_bar(aes(x = response, y = question, fill = answer), 
+             position = "fill", stat = "identity", data = comm_none) +
+    geom_text(aes(x = y, y = question, label = total), data = sum_comm_none) +
+    scale_x_continuous(labels = scales::percent) +
+    scale_fill_manual("", 
+                 values = five_colors) +
+  xlab("") +
+  ylab("") +
+  theme_classic() +
+  theme(legend.position = "top",
+        axis.text.x = element_text(size = 12, color = "black"),
+        axis.title.y = element_text(size = 12, color = "black"),
+        axis.text.y = element_text(size = 10, color = "black"),
+        legend.text = element_text(size = 10, color = "black"),
+        legend.title = element_text(size = 10, color = "black")) +
+  guides(fill = guide_legend(reverse=TRUE))
+
+comm_very <- confidence %>% 
+  filter(definition_1 == "Very",
+         answer != "NULL") %>% 
+  mutate(answer = ifelse(answer == 1, "Very",
+                  ifelse(answer == 2, "Somewhat",
+                  ifelse(answer == 3, "A little", 
+                  ifelse(answer == 4, "Not at all", "NA")))),
+         answer = fct_relevel(answer, "Very", "Somewhat", "A little", "Not at all" )) %>%
+  group_by(question, question_id, answer) %>% 
+  count() %>% 
+  mutate(response = n) %>% 
+  dplyr::select(question_id, question, answer, response)
+
+sum_comm_very <- comm_very %>% 
+  group_by(question) %>% 
+  summarize(total = sum(response)) %>% 
+  mutate(y = 1.1)
+  
+comm_very_graph <- ggplot() +
+    geom_bar(aes(x = response, y = question, fill = answer), 
+             position = "fill", stat = "identity", data = comm_very) +
+    geom_text(aes(x = y, y = question, label = total), data = sum_comm_very) +
+    scale_x_continuous(labels = scales::percent) +
+    scale_fill_manual("", 
+                 values = five_colors) +
+  xlab("") +
+  ylab("") +
+  theme_classic() +
+  theme(legend.position = "top",
+        axis.text.x = element_text(size = 12, color = "black"),
+        axis.title.y = element_text(size = 12, color = "black"),
+        axis.text.y = element_text(size = 10, color = "black"),
+        legend.text = element_text(size = 10, color = "black"),
+        legend.title = element_text(size = 10, color = "black")) +
+  guides(fill = guide_legend(reverse=TRUE))
+
+comm_excellent <- confidence %>% 
+  filter(definition_1 == "Excellent",
+         answer != "NULL") %>% 
+  mutate(answer = ifelse(answer == 1, "Excellent",
+                  ifelse(answer == 2, "Good",
+                  ifelse(answer == 3, "Fair", 
+                  ifelse(answer == 4, "Poor", "NA")))),
+         answer = fct_relevel(answer, "Excellent", "Good", "Fair", "Poor" )) %>%
+  group_by(question, question_id, answer) %>% 
+  count() %>% 
+  mutate(response = n) %>% 
+  dplyr::select(question_id, question, answer, response)
+
+sum_comm_excellent <- comm_excellent %>% 
+  group_by(question) %>% 
+  summarize(total = sum(response)) %>% 
+  mutate(y = 1.1)
+  
+comm_excellent_graph <- ggplot() +
+    geom_bar(aes(x = response, y = question, fill = answer), 
+             position = "fill", stat = "identity", data = comm_excellent) +
+    geom_text(aes(x = y, y = question, label = total), data = sum_comm_excellent) +
+    scale_x_continuous(labels = scales::percent) +
+    scale_fill_manual("", 
+                 values = four_colors) +
+  xlab("") +
+  ylab("") +
+  theme_classic() +
+  theme(legend.position = "top",
+        axis.text.x = element_text(size = 12, color = "black"),
+        axis.title.y = element_text(size = 12, color = "black"),
+        axis.text.y = element_text(size = 10, color = "black"),
+        legend.text = element_text(size = 10, color = "black"),
+        legend.title = element_text(size = 10, color = "black")) +
+  guides(fill = guide_legend(reverse=TRUE))
+
+plot_grid(comm_alot_graph, comm_none_graph, comm_very_graph, comm_excellent_graph, ncol=1, align="v", rel_heights = c(2.5, 3, 3, 1.5))
+```
+
+## Audience
+
+There were several statements in the post-training survey pertaining to the participants typical audience. 
+
+The second graph generalizes the top two response options and bottom two response options. 
+
+*The numbers to the right represent the total number of responses represented.*
+
+**Fewer than 1 in 4 participants identified their audience as being different from them in terms of their attitudes, beliefs, and values.**
+
+```{r comm audience, echo = TRUE, collapse = TRUE, message = FALSE, warning = FALSE, fig.align="center", fig.width = 13, fig.height = 9}
+comm_never <- confidence %>% 
+  filter(definition_1 == "Never",
+         answer != "NULL") %>% 
+  mutate(answer = ifelse(answer == 1, "Never",
+                  ifelse(answer == 2, "2",
+                  ifelse(answer == 3, "3", 
+                  ifelse(answer == 4, "4",
+                  ifelse(answer == 5, "Very often", "NA"))))),
+         answer = fct_relevel(answer, "Very often", "4", "3", "2", "Never")) %>%
+  group_by(question, question_id, answer) %>% 
+  count() %>% 
+  mutate(response = n) %>% 
+  dplyr::select(question_id, question, answer, response)
+
+sum_comm_never <- comm_never %>% 
+  group_by(question) %>% 
+  summarize(total = sum(response)) %>% 
+  mutate(y = 1.1)
+  
+comm_never_graph <- ggplot() +
+    geom_bar(aes(x = response, y = question, fill = answer), 
+             position = "fill", stat = "identity", data = comm_never) +
+    geom_text(aes(x = y, y = question, label = total), data = sum_comm_never) +
+    scale_x_continuous(labels = scales::percent) +
+    scale_fill_manual("", 
+                 values = five_colors,
+                 labels = c("Very often", "", "", "", "Never")) +
+  xlab("") +
+  ylab("") +
+  theme_classic() +
+  theme(legend.position = "top",
+        axis.text.x = element_text(size = 12, color = "black"),
+        axis.title.y = element_text(size = 12, color = "black"),
+        axis.text.y = element_text(size = 10, color = "black"),
+        legend.text = element_text(size = 10, color = "black"),
+        legend.title = element_text(size = 10, color = "black")) +
+  guides(fill = guide_legend(reverse=TRUE))
+
+comm_different <- confidence %>% 
+  filter(definition_1 == "Different from me",
+         answer != "NULL") %>% 
+  mutate(answer = ifelse(answer == 1, "Different from me",
+                  ifelse(answer == 2, "2",
+                  ifelse(answer == 3, "3", 
+                  ifelse(answer == 4, "4", 
+                  ifelse(answer == 5, "Similar to me", "NA"))))),
+         answer = fct_relevel(answer, "Different from me", "2", "3", "4", "Similar to me")) %>%
+  group_by(question, question_id, answer) %>% 
+  count() %>% 
+  mutate(response = n) %>% 
+  dplyr::select(question_id, question, answer, response)
+
+sum_comm_different <- comm_different %>% 
+  group_by(question) %>% 
+  summarize(total = sum(response)) %>% 
+  mutate(y = 1.1)
+  
+comm_different_graph <- ggplot() +
+    geom_bar(aes(x = response, y = question, fill = answer), 
+             position = "fill", stat = "identity", data = comm_different) +
+    geom_text(aes(x = y, y = question, label = total), data = sum_comm_different) +
+    scale_x_continuous(labels = scales::percent) +
+    scale_fill_manual("", 
+                 values = five_colors,
+                 labels = c("Different from me", "", "", "", "Similar to me")
+                 ) +
+  xlab("") +
+  ylab("") +
+  theme_classic() +
+  theme(legend.position = "top",
+        axis.text.x = element_text(size = 12, color = "black"),
+        axis.title.y = element_text(size = 12, color = "black"),
+        axis.text.y = element_text(size = 10, color = "black"),
+        legend.text = element_text(size = 10, color = "black"),
+        legend.title = element_text(size = 10, color = "black")) +
+  guides(fill = guide_legend(reverse=TRUE))
+
+comm_values <- confidence %>% 
+  filter(definition_1 == "People who have values and attitudes that differ from mine.",
+         answer != "NULL") %>% 
+  mutate(answer = ifelse(answer == 1, "People who have values \nand attitudes that differ \nfrom mine.",
+                  ifelse(answer == 2, "2",
+                  ifelse(answer == 3, "3", 
+                  ifelse(answer == 4, "4",
+                  ifelse(answer == 5, "People who have values \nand attitudes similar \nto mine.", "NA"))))),
+         answer = fct_relevel(answer, "People who have values \nand attitudes that differ \nfrom mine.", "2", "3", "4", "People who have values \nand attitudes similar \nto mine." )) %>%
+  group_by(question, question_id, answer) %>% 
+  count() %>% 
+  mutate(response = n) %>% 
+  dplyr::select(question_id, question, answer, response)
+
+sum_comm_values <- comm_values %>% 
+  group_by(question) %>% 
+  summarize(total = sum(response)) %>% 
+  mutate(y = 1.1)
+  
+comm_values_graph <- ggplot() +
+    geom_bar(aes(x = response, y = question, fill = answer), 
+             position = "fill", stat = "identity", data = comm_values) +
+    geom_text(aes(x = y, y = question, label = total), data = sum_comm_values) +
+    scale_x_continuous(labels = scales::percent) +
+    scale_fill_manual("", 
+                 values = five_colors,
+                 labels = c("People who have values \nand attitudes that differ \nfrom mine.", 
+                            "", "", "", "People who have values \nand attitudes similar \nto mine.")) +
+  xlab("") +
+  ylab("") +
+  theme_classic() +
+  theme(legend.position = "top",
+        axis.text.x = element_text(size = 12, color = "black"),
+        axis.title.y = element_text(size = 12, color = "black"),
+        axis.text.y = element_text(size = 10, color = "black"),
+        legend.text = element_text(size = 10, color = "black"),
+        legend.title = element_text(size = 10, color = "black")) +
+  guides(fill = guide_legend(reverse=TRUE))
+
+comm_attitudes <- confidence %>% 
+  filter(definition_1 == "They have a variety of attitudes and beliefs that differ from my own.",
+         answer != "NULL") %>% 
+  mutate(answer = ifelse(answer == 1, "They have a variety of attitudes \nand beliefs that differ \nfrom my own.",
+                  ifelse(answer == 2, "2",
+                  ifelse(answer == 3, "3", 
+                  ifelse(answer == 4, "4", 
+                  ifelse(answer == 5, "They share similar attitudes \nand beliefs to me.", "NA"))))),
+         answer = fct_relevel(answer, "They have a variety of attitudes \nand beliefs that differ \nfrom my own.", "2", "3", "4", "They share similar attitudes \nand beliefs to me.")) %>%
+  group_by(question, question_id, answer) %>% 
+  count() %>% 
+  mutate(response = n) %>% 
+  dplyr::select(question_id, question, answer, response)
+
+sum_comm_attitudes <- comm_attitudes %>% 
+  group_by(question) %>% 
+  summarize(total = sum(response)) %>% 
+  mutate(y = 1.1)
+  
+comm_attitudes_graph <- ggplot() +
+    geom_bar(aes(x = response, y = question, fill = answer), 
+             position = "fill", stat = "identity", data = comm_attitudes) +
+    geom_text(aes(x = y, y = question, label = total), data = sum_comm_attitudes) +
+    scale_x_continuous(labels = scales::percent) +
+    scale_fill_manual("", 
+                 values = five_colors,
+                 labels = c("They have a variety of \nattitudes and beliefs that \ndiffer from my own.", 
+                            "", "", "", "They share similar attitudes \nand beliefs to me.")
+                 ) +
+  xlab("") +
+  ylab("") +
+  theme_classic() +
+  theme(legend.position = "top",
+        axis.text.x = element_text(size = 12, color = "black"),
+        axis.title.y = element_text(size = 12, color = "black"),
+        axis.text.y = element_text(size = 10, color = "black"),
+        legend.text = element_text(size = 10, color = "black"),
+        legend.title = element_text(size = 10, color = "black")) +
+  guides(fill = guide_legend(reverse=TRUE))
+
+plot_grid(comm_never_graph, comm_different_graph, comm_values_graph, 
+          comm_attitudes_graph, ncol=1, align="v", rel_heights = c(2, 1.5, 2.25, 1.75))
+```
+
+```{r comm audience simpler, echo = TRUE, collapse = TRUE, message = FALSE, warning = FALSE, fig.align="center", fig.width = 13, fig.height = 6}
+comm_different_simpler <- comm_different %>% 
+  mutate(answer = ifelse(answer == "Different from me" |
+                           answer == "2", "Different from me",
+                  ifelse(answer == "Similar to me" |
+                           answer == "4", "Similar to me",
+                         "Neutral")), 
+         answer = factor(answer),
+         answer = fct_relevel(answer, "Different from me", "Neutral", "Similar to me")) %>% 
+  group_by(question_id, question, answer) %>% 
+  summarize(response = sum(response))
+  
+comm_ask <- ggplot() +
+    geom_bar(aes(x = response, y = factor(question), fill = answer), 
+             position = "fill", stat = "identity", data = comm_different_simpler) +
+    geom_text(aes(x = y, y = factor(question), label = total), 
+              data = sum_comm_different) +
+    scale_y_discrete() +
+    scale_x_continuous(labels = scales::percent) +
+    scale_fill_manual("", values = three_colors) +
+  xlab("") +
+  ylab("") +
+  theme_classic() +
+  theme(legend.position = "top",
+        axis.text.x = element_text(size = 12, color = "black"),
+        axis.title.y = element_text(size = 12, color = "black"),
+        axis.text.y = element_text(size = 10, color = "black"),
+        legend.text = element_text(size = 10, color = "black"),
+        legend.title = element_text(size = 10, color = "black")) +
+  guides(fill = guide_legend(reverse=TRUE))
+
+comm_attitudes_simpler <- comm_attitudes %>% 
+  mutate(answer = ifelse(answer == "They have a variety of attitudes \nand beliefs that differ \nfrom my own." |
+                           answer == "2", "They have a variety of attitudes \nand beliefs that differ \nfrom my own.",
+                  ifelse(answer == "They share similar attitudes \nand beliefs to me." |
+                           answer == "4", "They share similar attitudes \nand beliefs to me.",
+                         "Neutral")), 
+         answer = factor(answer),
+         answer = fct_relevel(answer, "They have a variety of attitudes \nand beliefs that differ \nfrom my own.", "Neutral", "They share similar attitudes \nand beliefs to me.")) %>% 
+  group_by(question_id, question, answer) %>% 
+  summarize(response = sum(response))
+  
+comm_talk <- ggplot() +
+    geom_bar(aes(x = response, y = factor(question), fill = answer), 
+             position = "fill", stat = "identity", data = comm_attitudes_simpler) +
+    geom_text(aes(x = y, y = factor(question), label = total), 
+              data = sum_comm_attitudes) +
+    scale_y_discrete() +
+    scale_x_continuous(labels = scales::percent) +
+    scale_fill_manual("", values = three_colors) +
+  xlab("") +
+  ylab("") +
+  theme_classic() +
+  theme(legend.position = "top",
+        axis.text.x = element_text(size = 12, color = "black"),
+        axis.title.y = element_text(size = 12, color = "black"),
+        axis.text.y = element_text(size = 10, color = "black"),
+        legend.text = element_text(size = 10, color = "black"),
+        legend.title = element_text(size = 10, color = "black")) +
+  guides(fill = guide_legend(reverse=TRUE))
+
+comm_values_simpler <- comm_values %>% 
+  filter(question_id == "post23") %>% 
+  mutate(answer = ifelse(answer == "People who have values \nand attitudes that differ \nfrom mine." |
+                           answer == "2", "People who have values \nand attitudes that differ \nfrom mine.",
+                  ifelse(answer == "People who have values \nand attitudes similar \nto mine." |
+                           answer == "4", "People who have values \nand attitudes similar \nto mine.",
+                         "Neutral")), 
+         answer = factor(answer),
+         answer = fct_relevel(answer, "People who have values \nand attitudes that differ \nfrom mine.", "Neutral", "People who have values \nand attitudes similar \nto mine.")) %>% 
+  group_by(question_id, question, answer) %>% 
+  summarize(response = sum(response))
+
+sum_comm_social <- comm_values_simpler %>% 
+  group_by(question) %>% 
+  summarize(total = sum(response)) %>% 
+  mutate(y = 1.1)
+  
+comm_social <- ggplot() +
+    geom_bar(aes(x = response, y = factor(question), fill = answer), 
+             position = "fill", stat = "identity", data = comm_values_simpler) +
+    geom_text(aes(x = y, y = factor(question), label = total), 
+              data = sum_comm_social) +
+    scale_y_discrete() +
+    scale_x_continuous(labels = scales::percent) +
+    scale_fill_manual("", values = three_colors) +
+  xlab("") +
+  ylab("") +
+  theme_classic() +
+  theme(legend.position = "top",
+        axis.text.x = element_text(size = 12, color = "black"),
+        axis.title.y = element_text(size = 12, color = "black"),
+        axis.text.y = element_text(size = 10, color = "black"),
+        legend.text = element_text(size = 10, color = "black"),
+        legend.title = element_text(size = 10, color = "black")) +
+  guides(fill = guide_legend(reverse=TRUE))
+
+plot_grid(comm_ask, comm_talk, comm_social, 
+          ncol=1, align="v", rel_heights = c(2.3, 2.5, 2.5))
+```
+
+---
+
+# Change in Sci-Comm Interest {.tabset}
+
+Participants were asked to choose their level of agreement that participating in the workshops and activities has changed their interest in conveying science to the public.
+
+```sql
+SELECT posttest.recipient_id, posttest.question_id, question, answer_type, definition_1, definition_2, definition_3, definition_4, definition_5, answer
+FROM training.posttest
+JOIN training.questions
+ON posttest.question_id = questions.question_id
+WHERE posttest.question_id LIKE 'post28%';
+```
+
+## Combined
+
+The second graph generalizes to disagree/neutral/agree.
+
+*The numbers to the right indicate the number of survey responses per statement.*
+
+**89% of participants had self-reported increases in interest in science communication following the training.**
+
+```{r change confidence, echo = TRUE, collapse = TRUE, message = FALSE, warning = FALSE, fig.align="center", fig.width = 11, fig.height = 4}
+change_confidence_counts <- change_confidence %>% 
+  filter(answer != "NULL") %>% 
+  mutate(answer = ifelse(answer == 1, "Much less interested",
+                  ifelse(answer == 2, "A little interested", 
+                  ifelse(answer == 3, "The same",
+                  ifelse(answer == 4, "A little more interested", 
+                  ifelse(answer == 5, "Much more interested", "NA"))))),
+         answer = fct_relevel(answer, "Much more interested", "A little more interested", 
+                              "The same", "A little interested", "Much less interested"),
+         question = fct_recode(question, "After participating in the training and events, \nhow much more or less interested are you in \nconveying science to the general public?" = "After participating in the training and events, how much more or less interested are you in conveying science to the general public?")) %>%
+  group_by(question, question_id, answer) %>% 
+  count() %>% 
+  mutate(response = n) %>% 
+  dplyr::select(question_id, question, answer, response)
+
+sum_change_confidence <- change_confidence_counts %>% 
+  group_by(question) %>% 
+  summarize(total = sum(response)) %>% 
+  mutate(y = 1.1)
+  
+ggplot() +
+    geom_bar(aes(x = response, y = factor(question), fill = answer), 
+             position = "fill", stat = "identity", data = change_confidence_counts) +
+    geom_text(aes(x = y, y = factor(question), label = total), 
+              data = sum_change_confidence) +
+  annotate(geom = 'segment', y = 1.5,  x = 0.11, xend = 1, yend = 1.5) +
+  annotate(geom = 'text', y = 1.53,  x = 0.555, label = "89% More Interested") +
+    scale_y_discrete() +
+    scale_x_continuous(labels = scales::percent) +
+    scale_fill_manual("", 
+                 values = five_colors) +
+  xlab("") +
+  ylab("") +
+  theme_classic() +
+  theme(legend.position = "top",
+        axis.text.x = element_text(size = 12, color = "black"),
+        axis.title.y = element_text(size = 12, color = "black"),
+        axis.text.y = element_text(size = 10, color = "black"),
+        legend.text = element_text(size = 10, color = "black"),
+        legend.title = element_text(size = 10, color = "black")) +
+  guides(fill = guide_legend(reverse=TRUE))
+```
+
+```{r change confidence simpler, echo = TRUE, collapse = TRUE, message = FALSE, warning = FALSE, fig.align="center", fig.width = 11, fig.height = 4}
+change_confidence_counts_simpler <- change_confidence_counts %>% 
+  mutate(answer = ifelse(answer == "Much less interested" |
+                           answer == "A little interested", "Less interested",
+                  ifelse(answer == "A little more interested" |
+                           answer == "Much more interested", "More interested",
+                         "Neutral")), 
+         answer = fct_relevel(answer, "More interested", "Neutral", "Less interested")) %>% 
+  group_by(question_id, question, answer) %>% 
+  summarize(response = sum(response))
+  
+ggplot() +
+    geom_bar(aes(x = response, y = factor(question), fill = answer), 
+             position = "fill", stat = "identity", 
+             data = change_confidence_counts_simpler) +
+    geom_text(aes(x = y, y = factor(question), label = total), 
+              data = sum_change_confidence) +
+  annotate(geom = 'segment', y = 1.5,  x = 0.11, xend = 1, yend = 1.5) +
+  annotate(geom = 'text', y = 1.53,  x = 0.555, label = "89% More Interested") +
+    scale_y_discrete() +
+    scale_x_continuous(labels = scales::percent) +
+    scale_fill_manual("", 
+                 values = three_colors) +
+  xlab("") +
+  ylab("") +
+  theme_classic() +
+  theme(legend.position = "top",
+        axis.text.x = element_text(size = 12, color = "black"),
+        axis.title.y = element_text(size = 12, color = "black"),
+        axis.text.y = element_text(size = 10, color = "black"),
+        legend.text = element_text(size = 10, color = "black"),
+        legend.title = element_text(size = 10, color = "black")) +
+  guides(fill = guide_legend(reverse=TRUE))
+```
+
+---
+
+## Modules Only vs. ELE + Modules
+
+I compared responses to this statement between ELE participants and those who only completed the modules.
+
+*Points and errorbars are the mean and standard error. The jittered points represent each individual response.*
+
+**ELE participants did not differ in interest in science communication than those that did not participate in ELE.**
+
+```{r change confidence arachnid ele, echo = TRUE, collapse = TRUE, message = FALSE, warning = FALSE, fig.align="center", fig.width = 4, fig.height = 4}
+# stats
+cc <- change_confidence %>% 
+  filter(research == 0,
+         course == 0) %>% 
+  filter(answer != "NULL") %>% 
+  mutate(answer = as.numeric(answer),
+         ele = ifelse(ele == 1, "ELE + Modules", "Modules Only"),
+         ele = fct_relevel(ele, "Modules Only", "ELE + Modules"),
+         question = fct_recode(question,
+           "After participating in the training and events, \nhow much more or less interested are you in \nconveying science to the general public?" = 
+             "After participating in the training and events, how much more or less interested are you in conveying science to the general public?"))
+t.test(answer ~ ele, data = cc)
+
+# wrangle for graph
+change_confidence_ele <- cc %>% 
+  group_by(ele, question_id, question) %>% 
+  summarize(mean = mean(answer),
+            se = plotrix::std.error(answer))
+
+# graph
+ggplot() +
+  geom_jitter(aes(x = ele, y = answer), width = 0.1, alpha = 0.5, 
+              color = "black", data = cc) +
+  geom_point(aes(x = ele, y = mean), size = 3, data = change_confidence_ele, 
+             color = "black") +
+  geom_errorbar(aes(x = ele, ymax = mean + se, ymin = mean - se), 
+                linewidth = 1, color = "black", width = 0.25, 
+                data = change_confidence_ele) +
+  xlab("") +
+  ylab("Level of Interest \nLess Interested ----------------- More Interested") +
+  theme_classic() +
+  theme(legend.position = "top",
+        axis.text.x = element_text(size = 12, color = "black"),
+        axis.title.y = element_text(size = 12, color = "black"),
+        axis.text.y = element_text(size = 12, color = "black"),
+        legend.text = element_text(size = 10, color = "black"),
+        legend.title = element_text(size = 10, color = "black"),
+        strip.text = element_text(size = 10)) +
+  facet_wrap(~question)
+```
+
+---

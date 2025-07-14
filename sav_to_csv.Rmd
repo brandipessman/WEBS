@@ -1,0 +1,560 @@
+---
+title: "WEBS"
+author: "Brandi Pessman"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r libraries}
+library(tidyverse)
+library(haven)
+library(lubridate)
+```
+
+```{r import}
+participants <- read.csv("wrangled_data/participants.csv")
+```
+
+```{r NESA Module 1}
+NESA_Mod1 <- read_sav("NESA (Nebraska Science Ambassadors) Student SciComm Training/NESA Module 1 Evaluation.sav") %>% 
+  dplyr::select(ResponseId, RecipientFirstName, RecordedDate, Duration__in_seconds_, Status, Progress, Finished, DistributionChannel, ExternalReference, QID1, LocationLatitude, LocationLongitude, Eval_1, Eval_2, Eval_3, Eval_4, Eval_5, Q4) %>% 
+  mutate(module = 1)
+colnames(NESA_Mod1) <- c("response_id", "recipient_name", "recorded_date", "duration_s", "status", "progress", "finished", "distribution_channel", "external_reference", "q_id_1", "location_latitude", "location_longiture", "eval1_1", "eval1_2", "eval1_3", "eval1_4", "eval1_5", "comments", "module")
+sapply(NESA_Mod1, function(x) attr(x, "label"))[13:17]
+sapply(NESA_Mod1, function(x) attr(x, "labels"))[13:17]
+NESA_Mod1 <- NESA_Mod1 %>% 
+  pivot_longer(cols = c(eval1_1:eval1_5), values_to = "answer", names_to = "question_id") %>% 
+  mutate(answer = as.numeric(answer),
+         status = as.numeric(status),
+         progress = as.numeric(progress),
+         finished = as.numeric(finished),
+         recorded_date = ymd_hms(recorded_date))
+
+NESA_Mod1 <- left_join(NESA_Mod1, participants, by = "recipient_name") %>% 
+  mutate(recipient_id = ifelse(recipient_name == "María José Oviedo Ventura", 62,
+                               ifelse(recipient_name == "Dominika Bezdeková", 20, recipient_id)))
+
+# print instances where external_reference does not equal q_id_1
+# None
+NESA_Mod1 %>% 
+  filter(external_reference != q_id_1)
+
+# print instances of unfinished surveys
+# None
+NESA_Mod1 %>% 
+  filter(progress != 100)
+
+# Any NAs for answers
+# There is one participant with no answers but progress 100%
+# will remove the one with no answers
+NA1 <- NESA_Mod1 %>% 
+  filter(is.na(NESA_Mod1$answer) == TRUE)
+
+NESA_Mod1 <- NESA_Mod1 %>% 
+  filter(response_id != "R_2y1St1pwmOmO2Js")
+
+# sample size
+NESA_Mod1 <- NESA_Mod1 %>% 
+  mutate(iteration = ifelse(recorded_date < ymd("2022-04-01"), "Spring 2022",
+                            ifelse(recorded_date < ymd("2023-01-01"), "Fall 2022", "Spring 2023")),
+         entry = seq(1:nrow(NESA_Mod1))) %>% 
+  dplyr::select(entry, recipient_id, iteration, response_id:answer)
+
+NESA_Mod1_Duplicates <- NESA_Mod1 %>% 
+  group_by(recipient_name) %>% 
+  count() %>% 
+  mutate(n = n / 5) %>% 
+  filter(n > 1)
+
+NESA_Mod1 %>% 
+  filter(recipient_name == "Jamila Bajelan")
+
+NESA_Mod1 <- NESA_Mod1 %>% 
+  filter(response_id != "R_3oMWA68TXgVpKP9",
+         response_id != "R_bDAVHbstXff7mFz")
+
+NESA_Mod1_final <- NESA_Mod1 %>% 
+  dplyr::select(entry, recipient_id, recorded_date, duration_s, progress, module, question_id, answer)
+
+NESA_Mod1 %>% 
+  distinct(recipient_name, iteration) %>% 
+  group_by(iteration) %>% 
+  count()
+```
+
+For module one, I removed one participant who finished but all answers were NA. Spring 2022 = 36, Fall 2022 = 19, Spring 2023 = 30, total = 85.
+
+```{r NESA Module 2}
+NESA_Mod2 <- read_sav("NESA (Nebraska Science Ambassadors) Student SciComm Training/NESA Module 2 Evaluation.sav") %>% 
+  dplyr::select(ResponseId, RecipientFirstName, RecordedDate, Duration__in_seconds_, Status, Progress, Finished, DistributionChannel, ExternalReference, QID1, LocationLatitude, LocationLongitude, Eval_1, Eval_2, Eval_3, Eval_4, Eval_5, Q4) %>% 
+  mutate(module = 2)
+colnames(NESA_Mod2) <- c("response_id", "recipient_name", "recorded_date", "duration_s", "status", "progress", "finished", "distribution_channel", "external_reference", "q_id_1", "location_latitude", "location_longiture", "eval2_1", "eval2_2", "eval2_3", "eval2_4", "eval2_5", "comments", "module")
+sapply(NESA_Mod2, function(x) attr(x, "label"))[13:17]
+sapply(NESA_Mod2, function(x) attr(x, "labels"))[13:17]
+NESA_Mod2 <- NESA_Mod2 %>% 
+  pivot_longer(cols = c(eval2_1:eval2_5), values_to = "answer", names_to = "question_id") %>% 
+  mutate(answer = as.numeric(answer),
+         status = as.numeric(status),
+         progress = as.numeric(progress),
+         finished = as.numeric(finished),
+         recorded_date = ymd_hms(recorded_date))
+
+NESA_Mod2 <- left_join(NESA_Mod2, participants, by = "recipient_name") %>% 
+  mutate(recipient_id = ifelse(recipient_name == "María José Oviedo Ventura", 62,
+                               ifelse(recipient_name == "Dominika Bezdeková", 20, recipient_id)))
+
+# print instances where external_reference does not equal q_id_1
+# one looks like a test run, one looks like a single mismatch, and two look like they have a space in the beginning
+reference2 <- NESA_Mod2 %>% 
+  filter(external_reference != q_id_1)
+
+# remove the test
+NESA_Mod2 <- NESA_Mod2 %>% 
+  filter(q_id_1 != "test1")
+
+# print instances of unfinished surveys
+# there is one unfinished to be removed, no answers
+unfinished2 <- NESA_Mod2 %>% 
+  filter(progress != 100)
+
+NESA_Mod2 <- NESA_Mod2 %>% 
+  filter(progress == 100)
+
+# Any NAs for answers
+# None
+NESA_Mod2 %>% 
+  filter(is.na(NESA_Mod2$answer) == TRUE)
+
+# sample size
+NESA_Mod2 <- NESA_Mod2 %>% 
+  mutate(iteration = ifelse(recorded_date < ymd("2022-04-01"), "Spring 2022",
+                            ifelse(recorded_date < ymd("2023-01-01"), "Fall 2022", "Spring 2023")),
+         entry = seq(1:nrow(NESA_Mod2))) %>% 
+  dplyr::select(entry, recipient_id, iteration, response_id:answer)
+
+NESA_Mod2_Duplicates <- NESA_Mod2 %>% 
+  group_by(recipient_name) %>% 
+  count() %>% 
+  mutate(n = n / 5) %>% 
+  filter(n > 1)
+
+NESA_Mod2 %>% 
+  filter(recipient_name == "Jamila Bajelan")
+
+NESA_Mod2 <- NESA_Mod2 %>% 
+  filter(response_id != "R_3KxSYZRPBXAccPU")
+
+NESA_Mod2_final <- NESA_Mod2 %>% 
+  dplyr::select(entry, recipient_id, recorded_date, duration_s, progress, module, question_id, answer)
+
+NESA_Mod2 %>% 
+  distinct(recipient_name, iteration) %>% 
+  group_by(iteration) %>% 
+  count()
+
+```
+
+For module two, I removed one test entry and participant who didn't finished and all answers were NA. Spring 2022 = 36, Fall 2022 = 15, Spring 2023 = 25, total = 76.
+
+```{r NESA Module 3}
+NESA_Mod3 <- read_sav("NESA (Nebraska Science Ambassadors) Student SciComm Training/NESA Module 3 and ELE Evaluation.sav") %>% 
+  dplyr::select(ResponseId, RecipientFirstName, RecordedDate, Duration__in_seconds_, Status, Progress, Finished, DistributionChannel, ExternalReference, QID1, LocationLatitude, LocationLongitude, Eval_1, Eval_2, Eval_3, Eval_4, Eval_5, Q5, Q6, Q7) %>% 
+  mutate(module = 3)
+colnames(NESA_Mod3) <- c("response_id", "recipient_name", "recorded_date", "duration_s", "status", "progress", "finished", "distribution_channel", "external_reference", "q_id_1", "location_latitude", "location_longiture", "eval3_1", "eval3_2", "eval3_3", "eval3_4", "eval3_5", "eval3_5_post_51", "eval3_6_post_52", "comments", "module")
+sapply(NESA_Mod3, function(x) attr(x, "label"))[13:19]
+sapply(NESA_Mod3, function(x) attr(x, "labels"))[13:19]
+NESA_Mod3 <- NESA_Mod3 %>% 
+  pivot_longer(cols = c(eval3_1:eval3_6_post_52), values_to = "answer", names_to = "question_id") %>% 
+  mutate(answer = as.numeric(answer),
+         status = as.numeric(status),
+         progress = as.numeric(progress),
+         finished = as.numeric(finished),
+         recorded_date = ymd_hms(recorded_date))
+
+NESA_Mod3 <- left_join(NESA_Mod3, participants, by = "recipient_name") %>% 
+  mutate(recipient_id = ifelse(recipient_name == "María José Oviedo Ventura", 62,
+                               ifelse(recipient_name == "Dominika Bezdeková", 20, recipient_id)))
+
+# print instances where external_reference does not equal q_id_1
+# All tests
+reference3 <- NESA_Mod3 %>% 
+  filter(external_reference != q_id_1)
+
+# remove the test
+NESA_Mod3 <- NESA_Mod3 %>% 
+  filter(q_id_1 != "test1",
+         q_id_1 != "test2")
+
+# print instances of unfinished surveys
+# there is one unfinished, answered the five evaluations but not the last two questions about previous experience
+unfinished3 <- NESA_Mod3 %>% 
+  filter(progress != 100)
+
+# Any NAs for answers
+# Only the two from the previous check
+NESA_Mod3 %>% 
+  filter(is.na(NESA_Mod3$answer) == TRUE)
+
+# sample size
+NESA_Mod3 <- NESA_Mod3 %>% 
+  mutate(iteration = ifelse(recorded_date < ymd("2022-04-01"), "Spring 2022",
+                            ifelse(recorded_date < ymd("2023-01-01"), "Fall 2022", "Spring 2023")),
+         entry = seq(1:nrow(NESA_Mod3))) %>% 
+  dplyr::select(entry, recipient_id, iteration, response_id:answer)
+
+NESA_Mod3_Duplicates <- NESA_Mod3 %>% 
+  group_by(recipient_name) %>% 
+  count() %>% 
+  mutate(n = n / 7) %>% 
+  filter(n > 1)
+
+NESA_Mod3 %>% 
+  filter(recipient_name == "Jamila Bajelan")
+
+NESA_Mod3 <- NESA_Mod3 %>% 
+  filter(response_id != "R_1OCrqEhr0ATgv29",
+         response_id != "R_yOXrivAd7lKpkHf")
+
+NESA_Mod3_final <- NESA_Mod3 %>% 
+  dplyr::select(entry, recipient_id, recorded_date, duration_s, progress, module, question_id, answer)
+
+NESA_Mod3 %>% 
+  distinct(recipient_name, iteration) %>% 
+  group_by(iteration) %>% 
+  count()
+```
+
+For module three, I removed two test entries. Spring 2022 = 32, Fall 2022 = 13, Spring 2023 = 23, total = 68
+
+```{r NESA Module 4}
+NESA_Mod4 <- read_sav("NESA (Nebraska Science Ambassadors) Student SciComm Training/NESA Module 4 Evaluation.sav") %>% 
+  dplyr::select(ResponseId, RecipientFirstName, RecordedDate, Duration__in_seconds_, Status, Progress, Finished, DistributionChannel, ExternalReference, QID1, LocationLatitude, LocationLongitude, Eval4_1, Eval4_2, Eval4_3, Eval4_4, Eval4_5, Q4) %>% 
+  mutate(module = 4)
+colnames(NESA_Mod4) <- c("response_id", "recipient_name", "recorded_date", "duration_s", "status", "progress", "finished", "distribution_channel", "external_reference", "q_id_1", "location_latitude", "location_longiture", "eval4_1", "eval4_2", "eval4_3", "eval4_4", "eval4_5", "comments", "module")
+sapply(NESA_Mod4, function(x) attr(x, "label"))[13:17]
+sapply(NESA_Mod4, function(x) attr(x, "labels"))[13:17]
+NESA_Mod4 <- NESA_Mod4 %>% 
+  pivot_longer(cols = c(eval4_1:eval4_5), values_to = "answer", names_to = "question_id") %>% 
+  mutate(answer = as.numeric(answer),
+         status = as.numeric(status),
+         progress = as.numeric(progress),
+         finished = as.numeric(finished),
+         recorded_date = ymd_hms(recorded_date))
+
+NESA_Mod4 <- left_join(NESA_Mod4, participants, by = "recipient_name") %>% 
+  mutate(recipient_id = ifelse(recipient_name == "María José Oviedo Ventura", 62,
+                               ifelse(recipient_name == "Dominika Bezdeková", 20, recipient_id)))
+
+# print instances where external_reference does not equal q_id_1
+# One test
+reference4 <- NESA_Mod4 %>% 
+  filter(external_reference != q_id_1)
+
+# remove the test
+NESA_Mod4 <- NESA_Mod4 %>% 
+  filter(q_id_1 != "test1")
+
+# print instances of unfinished surveys
+# there is one unfinished with no answers to be removed
+unfinished4 <- NESA_Mod4 %>% 
+  filter(progress != 100)
+
+NESA_Mod4 <- NESA_Mod4 %>% 
+  filter(progress == 100)
+
+# Any NAs for answers
+# There is one participant with no answers but progress 100%, and one with a single unanswered question but progress 100%
+# will remove the one with no answers
+NA4 <- NESA_Mod4 %>% 
+  filter(is.na(NESA_Mod4$answer) == TRUE)
+
+NESA_Mod4 <- NESA_Mod4 %>% 
+  filter(response_id != "R_2TSr41Fa0vYEkI2")
+
+# sample size
+NESA_Mod4 <- NESA_Mod4 %>% 
+  mutate(iteration = ifelse(recorded_date < ymd("2022-04-01"), "Spring 2022",
+                            ifelse(recorded_date < ymd("2023-01-01"), "Fall 2022", "Spring 2023")),
+         entry = seq(1:nrow(NESA_Mod4))) %>% 
+  dplyr::select(entry, recipient_id, iteration, response_id:answer)
+
+NESA_Mod4_Duplicates <- NESA_Mod4 %>% 
+  group_by(recipient_name) %>% 
+  count() %>% 
+  mutate(n = n / 5) %>% 
+  filter(n > 1)
+
+NESA_Mod4 %>% 
+  filter(recipient_name == "Jamila Bajelan")
+
+NESA_Mod4_final <- NESA_Mod4 %>% 
+  dplyr::select(entry, recipient_id, recorded_date, duration_s, progress, module, question_id, answer)
+
+NESA_Mod4 %>% 
+  distinct(recipient_name, iteration) %>% 
+  group_by(iteration) %>% 
+  count()
+```
+
+For module four, I removed one test entry, one unfinished with no answers, and one finished with no answers. Spring 2022 = 31, total = 31.
+
+```{r NESA Pre Test, warning = FALSE}
+pre_test <- read_sav("NESA (Nebraska Science Ambassadors) Student SciComm Training/NESA Students (Pre Test).sav") %>% 
+  dplyr::select(ResponseId, RecipientFirstName, RecordedDate, Duration__in_seconds_, Status, Progress, Finished, DistributionChannel, ExternalReference, ID, LocationLatitude, LocationLongitude, Q3_1: Q4_3, Q7_1:Q46_4_TEXT)
+colnames(pre_test) <- c("response_id", "recipient_name", "recorded_date", "duration_s", "status", "progress", "finished", "distribution_channel", "external_reference", "q_id_1", "location_latitude", "location_longitude", "prepost3_1", "prepost3_2", "prepost3_3", "prepost4_1", "prepost4_2", "prepost4_3", "prepost7_1", "prepost7_2", "prepost7_3", "prepost7_4", "prepost7_5", "prepost7_6", "prepost8_1", "prepost8_2", "prepost8_3", "prepost8_4", "prepost8_5", "prepost10", "prepost11", "prepost12", "prepost13", "prepost14_1", "prepost14_2", "prepost14_3", "prepost14_4", "prepost15", "prepost16", "prepost17", "prepost18", "prepost19", "prepost20", "prepost21", "prepost22", "prepost23", "prepost24", "prepost25_1", "prepost25_2", "prepost25_3", "prepost25_4", "prepost25_5", "prepost25_6", "prepost25_7", "prepost25_8", "prepost25_9", "prepost25_10", "prepost25_11", "prepost25_12", "prepost25_13", "prepost25_14", "prepost25_15", "prepost26_1", "prepost26_2", "prepost26_3", "prepost26_4", "prepost26_5", "prepost26_6", "prepost26_7", "prepost29", "prepost30", "prepost31", "prepost32", "prepost33", "prepost34", "prepost35", "prepost36", "prepost38", "prepost38_text", "prepost39", "prepost39_text", "prepost40", "prepost41", "prepost42_3", "prepost42_4", "prepost42_2", "prepost42_1", "prepost42_7", "prepost42_8", "prepost42_9", "prepost42_6", "prepost42_text", "prepost43", "prepost44", "prepost45", "prepost46", "prepost46_text")
+sapply(pre_test, function(x) attr(x, "label"))[13:97]
+sapply(pre_test, function(x) attr(x, "labels"))[13:97]
+pre_test_text <- pre_test %>% 
+  dplyr::select(response_id:location_longitude, prepost4_1:prepost4_3, prepost40, prepost38_text, prepost39_text, prepost42_text, prepost46_text) %>% 
+  pivot_longer(cols = c(prepost4_1:prepost46_text), values_to = "answer", names_to = "question_id") %>% 
+  mutate(status = as.numeric(status),
+         progress = as.numeric(progress),
+         finished = as.numeric(finished),
+         recorded_date = ymd_hms(recorded_date))
+
+pre_test <- pre_test %>% 
+  dplyr::select(-prepost4_1:-prepost4_3, -prepost40, -prepost38_text, -prepost39_text, -prepost42_text, -prepost46_text) %>% 
+  mutate(prepost36 = as.numeric(prepost36 - 5),
+         prepost34 = as.numeric(prepost34) - 16) %>% 
+  pivot_longer(cols = c(prepost3_1:prepost46), values_to = "answer", names_to = "question_id") %>% 
+  mutate(status = as.numeric(status),
+         progress = as.numeric(progress),
+         finished = as.numeric(finished),
+         recorded_date = ymd_hms(recorded_date), 
+         answer = as.numeric(answer))
+
+pre_test <- left_join(pre_test, participants, by = "recipient_name") %>% 
+  mutate(recipient_id = ifelse(recipient_name == "María José Oviedo Ventura", 62,
+                               ifelse(recipient_name == "Dominika Bezdeková", 20,
+                                      ifelse(recipient_name == "Milana Doné", 107, recipient_id))))
+
+pre_test_text <- left_join(pre_test_text, participants, by = "recipient_name") %>% 
+  mutate(recipient_id = ifelse(recipient_name == "María José Oviedo Ventura", 62,
+                               ifelse(recipient_name == "Dominika Bezdeková", 20,
+                                      ifelse(recipient_name == "Milana Doné", 107, recipient_id))))
+
+# print instances where external_reference does not equal q_id_1
+# One did not enter the q_id_1 and one entered email instead, others looked fine and may have an extra space
+# will remove the unentered because did not answer any
+reference_pre <- pre_test %>% 
+  filter(external_reference != q_id_1)
+
+pre_test <- pre_test %>% 
+  filter(response_id != "R_es2lQ4Uzpv3Jf2x")
+
+# print instances of unfinished surveys
+# there is one unfinished with no answers to be removed
+unfinished_pre <- pre_test %>% 
+  filter(progress != 100)
+
+pre_test <- pre_test %>% 
+  filter(response_id != "R_dnHSA4rPGWVxtYZ")
+
+# Any NAs for answers
+# There is a lot of prepost3 unanswered, lots of here and there not answered
+# will keep all for now
+NA_pre <- pre_test %>% 
+  filter(is.na(pre_test$answer) == TRUE)
+
+
+# print instances where external_reference does not equal q_id_1
+# same issues
+reference_pre_text <- pre_test_text %>% 
+  filter(external_reference != q_id_1)
+
+pre_test_text <- pre_test_text %>% 
+  filter(response_id != "R_es2lQ4Uzpv3Jf2x")
+
+# print instances of unfinished surveys
+# there is one unfinished with no answers to be removed
+unfinished_pre_text <- pre_test_text %>% 
+  filter(progress != 100)
+
+pre_test_text <- pre_test_text %>% 
+  filter(response_id != "R_dnHSA4rPGWVxtYZ")
+
+# Any NAs for answers
+# None
+pre_test_text %>% 
+  filter(is.na(pre_test_text$answer) == TRUE)
+
+# sample size
+pre_test <- pre_test %>% 
+  mutate(iteration = ifelse(recorded_date < ymd("2022-04-01"), "Spring 2022",
+                            ifelse(recorded_date < ymd("2023-01-01"), "Fall 2022", "Spring 2023")),
+         entry = seq(1:nrow(pre_test))) %>% 
+  dplyr::select(entry, recipient_id, iteration, response_id:answer)
+
+pre_test_text <- pre_test_text %>% 
+  mutate(iteration = ifelse(recorded_date < ymd("2022-04-01"), "Spring 2022",
+                            ifelse(recorded_date < ymd("2023-01-01"), "Fall 2022", "Spring 2023")),
+         entry = seq(1:nrow(pre_test_text))) %>% 
+  dplyr::select(entry, recipient_id, iteration, response_id:answer)
+
+pre_test_duplicates <- pre_test %>% 
+  group_by(recipient_name) %>% 
+  count() %>% 
+  mutate(n = n / 77) %>% 
+  filter(n > 1)
+
+pre_test %>% 
+  filter(recipient_name == "Jamila Bajelan")
+pre_test %>% 
+  filter(recipient_name == "Kayla Unick")
+
+pre_test <- pre_test %>% 
+  filter(response_id != "R_1lgxDKxnTVDPjZW",
+         response_id != "R_3sv7EKNVm7ieeaG",
+         response_id != "R_1P4Zh5FHRPYXlNR")
+
+pre_test_text <- pre_test_text %>% 
+  filter(response_id != "R_1lgxDKxnTVDPjZW",
+         response_id != "R_3sv7EKNVm7ieeaG",
+         response_id != "R_1P4Zh5FHRPYXlNR")
+
+pre_test %>% 
+  distinct(recipient_name, iteration) %>% 
+  group_by(iteration) %>% 
+  count()
+
+pre_test_final <- pre_test %>% 
+  dplyr::select(entry, recipient_id, recorded_date, duration_s, progress, question_id, answer)
+pre_test_text_final <- pre_test_text %>% 
+  dplyr::select(entry, recipient_id, recorded_date, duration_s, progress, question_id, answer)
+```
+
+For the pre test, I removed two entries with no answers. Spring 2022 = 49, Fall 2022 = 21, Spring 2023 = 30, total = 100.
+
+```{r NESA Post Test, warning = FALSE}
+post_test <- read_sav("NESA (Nebraska Science Ambassadors) Student SciComm Training/NESA Students (Post Test).sav") %>% 
+  dplyr::select(ResponseId, RecipientFirstName, RecordedDate, Duration__in_seconds_, Status, Progress, Finished, DistributionChannel, ExternalReference, ID, LocationLatitude, LocationLongitude, Participation_1:Q46_4_TEXT) 
+colnames(post_test) <- c("response_id", "recipient_name", "recorded_date", "duration_s", "status", "progress", "finished", "distribution_channel", "external_reference", "q_id_1", "location_latitude", "location_longitude", "participation1", "participation2", "participation3", "participation4", "participation5", "eval3_5_post_51", "eval3_6_post_52", "prepost3_1", "prepost3_2", "prepost3_3", "prepost4_1", "prepost4_2", "prepost4_3", "post6_1", "post6_2", "post6_3", "post6_4", "post6_5", "post6_6", "post6_7", "prepost7_1", "prepost7_2", "prepost7_3", "prepost7_4", "prepost7_5", "prepost7_6", "prepost8_1", "prepost8_2", "prepost8_3", "prepost8_4", "prepost8_5", "prepost10", "prepost11", "prepost12", "prepost13", "prepost14_1", "prepost14_2", "prepost14_3", "prepost14_4", "prepost15", "prepost16", "prepost17", "prepost18", "prepost19", "prepost20", "prepost21", "prepost22", "prepost23", "prepost24", "prepost25_1", "prepost25_2", "prepost25_3", "prepost25_4", "prepost25_5", "prepost25_6", "prepost25_7", "prepost25_8", "prepost25_9", "prepost25_10", "prepost25_11", "prepost25_12", "prepost25_13", "prepost25_14", "prepost25_15", "prepost26_1", "prepost26_2", "prepost26_3", "prepost26_4", "prepost26_5", "prepost26_6", "prepost26_7", "prepost27", "post28", "post29", "prepost30", "prepost31", "prepost32", "prepost33", "prepost34", "prepost35", "prepost36", "prepost38", "prepost38_text", "prepost39", "prepost39_text", "prepost40", "prepost41", "prepost42_3", "prepost42_4", "prepost42_2", "prepost42_1", "prepost42_7", "prepost42_8", "prepost42_9", "prepost42_6", "prepost42_text", "prepost43", "prepost44", "prepost45", "prepost46", "prepost46_text")
+sapply(post_test, function(x) attr(x, "label"))[13:113]
+sapply(post_test, function(x) attr(x, "labels"))[13:113]
+
+post_test_text <- post_test %>% 
+  dplyr::select(response_id:location_longitude, prepost4_1:prepost4_3, prepost40, prepost38_text, prepost39_text, prepost42_text, prepost46_text) %>% 
+  pivot_longer(cols = c(prepost4_1:prepost46_text), values_to = "answer", names_to = "question_id") %>% 
+  mutate(status = as.numeric(status),
+         progress = as.numeric(progress),
+         finished = as.numeric(finished),
+         recorded_date = ymd_hms(recorded_date))
+
+
+post_test <- post_test %>% 
+  mutate(prepost36 = as.numeric(prepost36) - 5,
+         prepost34 = as.numeric(prepost34) - 16,
+         prepost27 = as.numeric(prepost27) - 7) %>% 
+  dplyr::select(-prepost4_1:-prepost4_3, -prepost40, -prepost38_text, -prepost39_text, -prepost42_text, -prepost46_text) %>% 
+  pivot_longer(cols = c(participation1:prepost46), values_to = "answer", names_to = "question_id") %>% 
+  mutate(answer = as.numeric(answer),
+         status = as.numeric(status),
+         progress = as.numeric(progress),
+         finished = as.numeric(finished),
+         recorded_date = ymd_hms(recorded_date))
+
+post_test <- left_join(post_test, participants, by = "recipient_name") %>% 
+  mutate(recipient_id = ifelse(recipient_name == "María José Oviedo Ventura", 62,
+                               ifelse(recipient_name == "Dominika Bezdeková", 20,
+                                      ifelse(recipient_name == "Milana Doné", 107, recipient_id))))
+
+post_test_text <- left_join(post_test_text, participants, by = "recipient_name") %>% 
+  mutate(recipient_id = ifelse(recipient_name == "María José Oviedo Ventura", 62,
+                               ifelse(recipient_name == "Dominika Bezdeková", 20,
+                                      ifelse(recipient_name == "Milana Doné", 107, recipient_id))))
+
+# print instances where external_reference does not equal q_id_1
+# One with extra number, two unentered, two look fine
+# will remove the two unentered because no answers
+reference_post <- post_test %>% 
+  filter(external_reference != q_id_1)
+
+post_test <- post_test %>% 
+  filter(response_id != "R_1mk3clgG6Js4sgB",
+         response_id != "R_1prnRBg0bk8Lx6k")
+
+# print instances of unfinished surveys
+# all three answered some
+unfinished_post <- post_test %>% 
+  filter(progress != 100)
+
+# Any NAs for answers
+# There is a lot of prepost3 unanswered, lots of here and there not answered
+# will keep all for now
+NA_post <- post_test %>% 
+  filter(is.na(post_test$answer) == TRUE)
+
+
+# print instances where external_reference does not equal q_id_1
+# same issues
+reference_post_text <- post_test_text %>% 
+  filter(external_reference != q_id_1)
+
+post_test_text <- post_test_text %>% 
+  filter(response_id != "R_1mk3clgG6Js4sgB",
+         response_id != "R_1prnRBg0bk8Lx6k")
+
+# print instances of unfinished surveys
+# will keep for now
+unfinished_post_text <- post_test_text %>% 
+  filter(progress != 100)
+
+# Any NAs for answers
+# None
+post_test_text %>% 
+  filter(is.na(post_test_text$answer) == TRUE)
+
+# sample size
+post_test <- post_test %>% 
+  mutate(iteration = ifelse(recorded_date < ymd("2022-04-01"), "Spring 2022",
+                            ifelse(recorded_date < ymd("2023-01-25"), "Fall 2022", "Spring 2023")),
+         entry = seq(1:nrow(post_test))) %>% 
+  dplyr::select(entry, recipient_id, iteration, response_id:answer)
+
+post_test_text <- post_test_text %>% 
+  mutate(iteration = ifelse(recorded_date < ymd("2022-04-01"), "Spring 2022",
+                            ifelse(recorded_date < ymd("2023-01-25"), "Fall 2022", "Spring 2023")),
+         entry = seq(1:nrow(post_test_text))) %>% 
+  dplyr::select(entry, recipient_id, iteration, response_id:answer)
+
+
+post_test_duplicates <- post_test %>% 
+  group_by(recipient_name) %>% 
+  count() %>% 
+  mutate(n = n / 93) %>% 
+  filter(n > 1)
+
+post_test %>% 
+  filter(recipient_name == "Jamila Bajelan")
+
+post_test <- post_test %>% 
+  filter(response_id != "R_3KGVfyd7pWsjvK8",
+         response_id != "R_2UgrEB0aQeofnQw")
+
+post_test_text <- post_test_text %>% 
+  filter(response_id != "R_3KGVfyd7pWsjvK8",
+         response_id != "R_2UgrEB0aQeofnQw")
+
+post_test %>% 
+  distinct(recipient_name, iteration) %>% 
+  group_by(iteration) %>% 
+  count()
+
+post_test_final <- post_test %>% 
+  dplyr::select(entry, recipient_id, recorded_date, duration_s, progress, question_id, answer)
+post_test_text_final <- post_test_text %>% 
+  dplyr::select(entry, recipient_id, recorded_date, duration_s, progress, question_id, answer)
+```
+
+For the post test, I removed two entries with no answers. Spring 2022 = 37, Fall 2022 = 13, Spring 2023 = 23, total = 73.
+
+```{r save}
+write_csv(NESA_Mod1_final, "wrangled_data/NESA_Module_1.csv")
+write_csv(NESA_Mod2_final, "wrangled_data/NESA_Module_2.csv")
+write_csv(NESA_Mod3_final, "wrangled_data/NESA_Module_3.csv")
+write_csv(NESA_Mod4_final, "wrangled_data/NESA_Module_4.csv")
+write_csv(pre_test_final, "wrangled_data/pre_test.csv")
+write_csv(pre_test_text_final, "wrangled_data/pre_test_text.csv")
+write_csv(post_test_final, "wrangled_data/post_test.csv")
+write_csv(post_test_text_final, "wrangled_data/post_test_text.csv")
+```
