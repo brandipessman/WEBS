@@ -2,23 +2,27 @@
 
 The following data and code are provided as a reference for the associated publication in prep.
 
-## **Directory** / *File* Explanation
+## Directory / File Explanation
 
-- **NESA (Nebraska Science Ambassadors) Student SciComm Training**: raw data as .sav files
+**Directories**
+
+- *NESA (Nebraska Science Ambassadors) Student SciComm Training*: raw data as .sav files
+
+- *database_files*: csvs exported to this directory to be added to a SQL server
+
+- *sql_scripts*: SQL scripts used to query the relational database files
+
+- *query_outputs*: where the results of the SQL queries are stored as csvs
+
+- *manuscript*: figures, tables, and methods/results for publication
+
+**Files**
 
 - *save_to_csv.Rmd*: extracts raw data and exports to csv, including notes on individuals excluded
-
-- **database_files**: csvs exported to this directory to be added to a SQL server
-
-- **sql_scripts**: SQL scripts used to query the relational database files
-
-- **query_outputs**: where the results of the SQL queries are stored as csvs
 
 - *analysis_v...*: markdown files and resulting knit htmls where analyses were performed and documented; lower version numbers are older drafts
 
 - *demographics.R*: R file where code used to look at demographics is saved
-
-- **manuscript**: figures, tables, and methods/results for publication
 
 - *participant_comments.docx*: user-entered comments from each survey
 
